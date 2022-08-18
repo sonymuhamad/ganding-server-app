@@ -1,7 +1,6 @@
 from django.db import models
 from django.utils import timezone
-
-# Create your models here.
+from django.contrib.auth.models import User
 
 class AbstractCustomerVendor(models.Model):
     name = models.CharField(max_length=255)
@@ -49,3 +48,21 @@ class AbstractDelivery(AbstractCode):
     class Meta:
         abstract = True
 
+class AbstractType(models.Model):
+    type_name = models.CharField(max_length=150)
+
+    def __str__(self) -> str:
+        return self.type_name
+
+    class Meta:
+        abstract = True
+
+
+class Activity(AbstractType):
+    pass
+
+
+class UserActivity(models.Model):
+    user = models.ForeignKey(User,on_delete=models.CASCADE)
+    activity = models.ForeignKey(Activity,on_delete=models.CASCADE)
+    descriptions = models.TextField()

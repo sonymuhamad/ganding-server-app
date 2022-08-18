@@ -1,8 +1,7 @@
 from django.db import models
 from marketing.models import AbstractCustomer,SalesOrder
 from purchasing.models import AbstractSupplier,PurchaseOrderMaterial
-from manager.models import AbstractQuantity,AbstractDelivery,AbstractCode,AbstractSchedule
-# from django.contrib.auth.models import User
+from manager.models import AbstractQuantity,AbstractDelivery,AbstractCode,AbstractSchedule,AbstractType
 # Create your models here.
 
 class Driver(models.Model):
@@ -11,14 +10,6 @@ class Driver(models.Model):
 class Vehicle(models.Model):
     license_part_number = models.CharField(max_length=50)
 
-class AbstractType(models.Model):
-    type_name = models.CharField(max_length=150)
-
-    def __str__(self) -> str:
-        return self.type_name
-
-    class Meta:
-        abstract = True
 
 
 class ProductType(AbstractType):
@@ -67,6 +58,10 @@ class AbstractProduct(models.Model):
     class Meta:
         abstract = True
 
+class WarehouseProduct(AbstractWarehouse,AbstractProduct):
+    
+    class Meta(AbstractWarehouse.Meta,AbstractProduct.Meta):
+        unique_together = [['warehouse_type','product']]
 
 class ProductOrder(AbstractProduct):
     sales_order = models.ForeignKey(SalesOrder,on_delete=models.CASCADE)
@@ -93,12 +88,6 @@ class AbstractMaterial(models.Model):
 
     class Meta:
         abstract = True
-
-
-class WarehouseProduct(AbstractWarehouse,AbstractProduct):
-    
-    class Meta(AbstractWarehouse.Meta,AbstractProduct.Meta):
-        unique_together = [['warehouse_type','product']]
 
 
 class WarehouseMaterial(AbstractWarehouse,AbstractMaterial):
@@ -169,7 +158,13 @@ class MaterialRequirementPlanning(AbstractQuantity,AbstractMaterial):
     
     class Meta(AbstractQuantity.Meta,AbstractMaterial.Meta):
         pass
+
+class DetailMrp(AbstractQuantity,AbstractProduct):
+    mrp = models.ForeignKey(MaterialRequirementPlanning,on_delete=models.CASCADE)
+    quantity_production = models.PositiveIntegerField()
     
+    class Meta(AbstractQuantity.Meta,AbstractProduct.Meta):
+        pass
 
 class MaterialOrder(AbstractMaterial):
     purchase_order_material = models.ForeignKey(PurchaseOrderMaterial,on_delete=models.CASCADE)

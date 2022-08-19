@@ -71,4 +71,4 @@ class UserActivity(AbstractCreated):
     activity = models.ForeignKey(Activity,on_delete=models.CASCADE)
     descriptions = models.TextField()
 
-
+    

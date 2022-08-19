@@ -5,11 +5,12 @@ from django.db import connection, reset_queries
 import time
 import functools
 
-from .serializer import UserSerializer
-from rest_framework.viewsets import ModelViewSet
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import check_password
 from rest_framework import response,status,permissions
+from rest_framework.viewsets import ModelViewSet
+
+from .serializer import UserSerializer,UserManagementSerializer
 
 CLIENT_ID = '9IwGfEqtmqoIFcFSGz2C1kcX8zNmCVFczPNy0vgk'
 CLIENT_SECRET = 'PlPFwPLscJ6b4c71UUCc0CebfEZf89CJCQqHSWOA3IolreLNfSfjr8NZqCbPfqmQjacCbr30wmvIUIIrUFSYExxKsoSYcgi4B8L65aGMjsATaoPCL0PRD28oq1DtPUYs'
@@ -94,4 +95,12 @@ class AuthViewSet(ModelViewSet):
 
 
 
+class UserViewSet(ModelViewSet):
+    serializer_class = UserManagementSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = User.objects.prefetch_related('groups').all()
 
+    def create(self, request, *args, **kwargs):
+        super().create(request, *args, **kwargs)
+        
+        return

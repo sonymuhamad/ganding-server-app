@@ -19,6 +19,23 @@ class AccessTokenSerializer(ModelSerializer):
         model = AccessToken
         fields = ['token','expires','scope','created']
 
+class UserManagementSerializer(ModelSerializer):
+    groups = GroupSerializer(many=True)
+    
+    class Meta:
+        model = User
+        fields = ['username','last_login','email','groups'] 
+
+    def create(self,validated_data):
+        validated_data['password'] = 'gandingtoolsindomajubersama' #default password
+        group = validated_data.pop('groups')
+
+        newUser = User.objects.create(**validated_data)
+        newUser.groups.add(group)
+
+        return newUser
+
+
 class UserSerializer(ModelSerializer):
     oauth2_provider_accesstoken = AccessTokenSerializer(many=True)
     groups = GroupSerializer(many=True)
@@ -46,7 +63,7 @@ class AuthSerializer(ModelSerializer):
         
         if user is not None:
             password = validated_data.pop('password')
-                        
+
             if check_password(password,user.password):
                 update_last_login('User',user)
                 return True

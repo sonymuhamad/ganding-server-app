@@ -1,5 +1,5 @@
 from django.db import models
-from manager.models import  AbstractCustomerVendor,AbstractCode
+from manager.models import  AbstractCustomerVendor,AbstractCode,AbstractCreated
 
 # Create your models here.
 
@@ -13,10 +13,10 @@ class AbstractCustomer(models.Model):
     class Meta:
         abstract = True
 
-class SalesOrder(AbstractCode,AbstractCustomer):
+class SalesOrder(AbstractCode,AbstractCustomer,AbstractCreated):
     fixed = models.BooleanField(default=False)
 
-    class Meta(AbstractCode.Meta,AbstractCustomer.Meta):
+    class Meta(AbstractCode.Meta,AbstractCustomer.Meta,AbstractCreated.Meta):
         pass
 
 

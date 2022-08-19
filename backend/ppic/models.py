@@ -1,7 +1,7 @@
 from django.db import models
 from marketing.models import AbstractCustomer,SalesOrder
 from purchasing.models import AbstractSupplier,PurchaseOrderMaterial
-from manager.models import AbstractQuantity,AbstractDelivery,AbstractCode,AbstractSchedule,AbstractType
+from manager.models import AbstractCreated, AbstractQuantity,AbstractDelivery,AbstractCode,AbstractSchedule,AbstractType
 # Create your models here.
 
 class Driver(models.Model):
@@ -11,6 +11,11 @@ class Vehicle(models.Model):
     license_part_number = models.CharField(max_length=50)
 
 
+class Operator(AbstractType):
+    pass
+
+class Machine(AbstractType):
+    pass
 
 class ProductType(AbstractType):
     pass
@@ -187,8 +192,20 @@ class MaterialReceipt(AbstractQuantity):
     material_order = models.ForeignKey(MaterialOrder,on_delete=models.CASCADE)
 
 
+class ProductionReport(AbstractProduct,AbstractCreated,AbstractQuantity):
+    process = models.ForeignKey(Process,on_delete=models.CASCADE)
+    quantity_not_good = models.PositiveBigIntegerField()
+    operator = models.ForeignKey(Operator,on_delete=models.CASCADE)
+    machine = models.ForeignKey(Machine,on_delete=models.CASCADE)
 
+    class Meta(AbstractProduct.Meta,AbstractCreated.Meta,AbstractQuantity.Meta):
+        pass
 
+class MaterialProductionReport(AbstractQuantity,AbstractMaterial):
+    production_report = models.ForeignKey(ProductionReport,on_delete=models.CASCADE)
+
+    class Meta(AbstractQuantity.Meta,AbstractMaterial.Meta):
+        pass
 
 
 

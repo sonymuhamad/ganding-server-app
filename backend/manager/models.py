@@ -40,19 +40,23 @@ class AbstractCode(models.Model):
     class Meta:
         abstract = True
 
-
-class AbstractDelivery(AbstractCode):
+class AbstractCreated(models.Model):
     created = models.DateTimeField(default=timezone.now)
-    note = models.TextField(default='Delivery Note')
 
     class Meta:
         abstract = True
 
+class AbstractDelivery(AbstractCode,AbstractCreated):
+    note = models.TextField(default='Delivery Note')
+
+    class Meta(AbstractCode.Meta,AbstractCreated.Meta):
+        abstract = True
+
 class AbstractType(models.Model):
-    type_name = models.CharField(max_length=150)
+    name = models.CharField(max_length=150)
 
     def __str__(self) -> str:
-        return self.type_name
+        return self.name
 
     class Meta:
         abstract = True
@@ -62,7 +66,9 @@ class Activity(AbstractType):
     pass
 
 
-class UserActivity(models.Model):
+class UserActivity(AbstractCreated):
     user = models.ForeignKey(User,on_delete=models.CASCADE)
     activity = models.ForeignKey(Activity,on_delete=models.CASCADE)
     descriptions = models.TextField()
+
+

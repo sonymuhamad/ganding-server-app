@@ -1,5 +1,5 @@
 from django.db import models
-from manager.models import AbstractCustomerVendor,AbstractCode
+from manager.models import AbstractCustomerVendor,AbstractCode,AbstractCreated
 
 # Create your models here.
 
@@ -12,9 +12,9 @@ class AbstractSupplier(models.Model):
     class Meta:
         abstract = True
 
-class PurchaseOrderMaterial(AbstractCode,AbstractSupplier):
-
-    class Meta(AbstractCode.Meta,AbstractSupplier.Meta):
+class PurchaseOrderMaterial(AbstractCode,AbstractSupplier,AbstractCreated):
+    
+    class Meta(AbstractCode.Meta,AbstractSupplier.Meta,AbstractCreated.Meta):
         pass
     
 

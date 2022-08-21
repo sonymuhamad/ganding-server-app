@@ -1,7 +1,8 @@
 from ast import Mod
 from rest_framework.serializers import ModelSerializer
-from .models import DeliveryNoteCustomer, DeliveryNoteSubcont, DeliverySchedule, DetailMrp, Driver, Material, MaterialOrder, MaterialReceipt, MaterialRequirementPlanning, Process, Product, ProductDeliverCustomer, ProductDeliverSubcont, ProductOrder, RequirementMaterial, RequirementProduct, Vehicle, WarehouseMaterial, WarehouseProduct,MaterialReceiptSchedule,DeliveryNoteMaterial
-from . import models
+# from .models import DeliveryNoteCustomer, DeliveryNoteSubcont, DeliverySchedule, DetailMrp, Driver, Material, MaterialOrder, MaterialReceipt, MaterialRequirementPlanning, Process, Product, ProductDeliverCustomer, ProductDeliverSubcont, ProductOrder, RequirementMaterial, RequirementProduct, Vehicle, WarehouseMaterial, WarehouseProduct,MaterialReceiptSchedule,DeliveryNoteMaterial
+
+from .models import *
 
 class DriverSerializer(ModelSerializer):
     class Meta:
@@ -68,6 +69,10 @@ class ProductDeliverCustomerSerializer(ModelSerializer):
         model = ProductDeliverCustomer
         fields = ['product_order','quantity','delivery_note_customer','paid']
 
+class ProductionReportSerializer(ModelSerializer):
+    class Meta:
+        model = ProductionReport
+        fields = ['product','created','quantity','process','quantity_not_good','operator','machine']
 
 
 
@@ -125,6 +130,10 @@ class DeliveryNoteMaterial(ModelSerializer):
         fields = ['code','created','note','supplier']
 
 
+class MaterialProductionReport(ModelSerializer):
+    class Meta:
+        model = MaterialProductionReport
+        fields = ['material','quantity','production_report']
 
 
 

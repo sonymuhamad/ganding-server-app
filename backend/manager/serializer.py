@@ -120,7 +120,7 @@ class CustomerSalesOrderSerializer(ModelSerializer):
     marketing_salesorder_related = ReportSalesOrderSerializer(many=True)
     class Meta:
         model = Customer
-        fields = ['name','email','phone','address','marketing_salesorder_related']
+        fields = ['id','name','email','phone','address','marketing_salesorder_related']
 
 
 '''
@@ -193,7 +193,7 @@ class CustomerDeliveryNoteSerializer(ModelSerializer):
     ppic_deliverynotecustomer_related = DeliveryNoteCustomerSerializer(many=True)
     class Meta:
         model = Customer
-        fields = ['name','email','phone','address','ppic_deliverynotecustomer_related']
+        fields = ['id','name','email','phone','address','ppic_deliverynotecustomer_related']
 
 
 

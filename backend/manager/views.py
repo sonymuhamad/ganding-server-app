@@ -9,7 +9,7 @@ from django.db.models import Prefetch
 from django.contrib.auth.models import User,update_last_login
 from django.contrib.auth.hashers import check_password
 from rest_framework import response,status,permissions
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
 
 from marketing.models import Customer, SalesOrder
 from purchasing.models import Supplier,PurchaseOrderMaterial
@@ -151,7 +151,7 @@ class ReportSupplierPurchaseOrderViewSet(ModelViewSet):
         Prefetch('purchasing_purchaseordermaterial_related',queryset=PurchaseOrderMaterial.objects.prefetch_related(
             Prefetch('materialorder_set',queryset=MaterialOrder.objects.prefetch_related('materialreceiptschedule_set').select_related('material__uom')))))
     
-class ReportCustomerSalesOrderViewSet(ModelViewSet):
+class ReportCustomerSalesOrderViewSet(ReadOnlyModelViewSet):
     '''
     plant manager -> sales report -> sales order
     '''
@@ -166,7 +166,7 @@ class ReportCustomerSalesOrderViewSet(ModelViewSet):
                             Prefetch('warehousewip_set',queryset=WarehouseWip.objects.select_related('warehouse_type')))))))))))
 
 
-class ReportDeliveryNoteCustomerViewSet(ModelViewSet):
+class ReportDeliveryNoteCustomerViewSet(ReadOnlyModelViewSet):
     '''
     plant manager -> sales report -> delivery note
     '''

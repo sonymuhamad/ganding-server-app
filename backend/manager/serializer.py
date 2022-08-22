@@ -42,11 +42,12 @@ class UserSerializer(ModelSerializer):
         fields = ['last_login','username','email','oauth2_provider_accesstoken','groups']
 
 class UserActivitySerializer(ModelSerializer):
-   
+    user = UserManagementSerializer()
+    activity = StringRelatedField()
     class Meta:
         model = UserActivity
         fields = ['user','activity','descriptions']
-        depth = 2 # dive 2 relation trough useractivity
+        # dive 2 relation trough useractivity
 
 '''
 serializer for material requirement planning
@@ -133,10 +134,9 @@ class MaterialReceiptScheduleSerializer(ModelSerializer):
 
 class MaterialSerializer(ModelSerializer):
     uom = StringRelatedField()
-    supplier = StringRelatedField()
     class Meta:
         model = Material
-        fields = ['name','weight','image','spec','length','width','thickness','uom','supplier']
+        fields = ['name','weight','image','spec','length','width','thickness','uom']
 
 class MaterialOrderSerializer(ModelSerializer):
     material = MaterialSerializer()

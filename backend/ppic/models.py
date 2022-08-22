@@ -77,7 +77,8 @@ class ProductOrder(AbstractProduct):
     '''
     sales_order = models.ForeignKey(SalesOrder,on_delete=models.CASCADE)
     ordered = models.PositiveBigIntegerField()
-    delivered = models.PositiveBigIntegerField()
+    delivered = models.PositiveBigIntegerField(default=0)
+    done = models.BooleanField(default=False)
 
 
 class DeliverySchedule(AbstractSchedule):
@@ -222,7 +223,8 @@ class MaterialOrder(AbstractMaterial):
     '''
     purchase_order_material = models.ForeignKey(PurchaseOrderMaterial,on_delete=models.CASCADE)
     ordered = models.PositiveBigIntegerField()
-    arrived = models.PositiveBigIntegerField()
+    arrived = models.PositiveBigIntegerField(default=0)
+    done = models.BooleanField(default=False)
 
 
 class MaterialReceiptSchedule(AbstractSchedule):
@@ -253,7 +255,7 @@ class ProductionReport(AbstractProduct,AbstractCreated,AbstractQuantity):
     report for every production
     '''
     process = models.ForeignKey(Process,on_delete=models.CASCADE)
-    quantity_not_good = models.PositiveBigIntegerField()
+    quantity_not_good = models.PositiveBigIntegerField(default=0)
     operator = models.ForeignKey(Operator,on_delete=models.CASCADE)
     machine = models.ForeignKey(Machine,on_delete=models.CASCADE)
 

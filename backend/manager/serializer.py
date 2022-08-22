@@ -4,8 +4,11 @@ from .models import UserActivity,Activity
 from oauth2_provider.models import AccessToken
 from django.contrib.auth.models import User,Group
 
-from ppic.models import MaterialRequirementPlanning,DetailMrp,Product,WarehouseProduct,Process,ProductOrder,WarehouseWip
-from marketing.models import SalesOrder
+from ppic.models import MaterialRequirementPlanning,DetailMrp,Product,WarehouseProduct,Process,ProductOrder,WarehouseWip,Material,MaterialOrder,MaterialReceiptSchedule,DeliveryNoteCustomer,ProductDeliverCustomer
+
+from marketing.models import SalesOrder,Customer
+
+from purchasing.models import Supplier,PurchaseOrderMaterial
 
 
 class ActivitySerializer(ModelSerializer):
@@ -45,6 +48,10 @@ class UserActivitySerializer(ModelSerializer):
         fields = ['user','activity','descriptions']
         depth = 2 # dive 2 relation trough useractivity
 
+'''
+serializer for material requirement planning
+'''
+
 class DetailMrpSerializer(ModelSerializer):
     
     class Meta:
@@ -53,6 +60,9 @@ class DetailMrpSerializer(ModelSerializer):
         depth = 1
 
 class ReportMrpSerializer(ModelSerializer):
+    '''
+    plant manager -> report mrp
+    '''
     detailmrp_set =  DetailMrpSerializer(many=True) #related name
 
     class Meta:
@@ -60,6 +70,10 @@ class ReportMrpSerializer(ModelSerializer):
         fields = ['material','quantity','detailmrp_set']
         depth = 1
 
+
+'''
+serializer for sales order
+'''
 class WarehouseWipSerializer(ModelSerializer):
     warehouse_type = StringRelatedField()
     class Meta:
@@ -97,6 +111,91 @@ class ReportSalesOrderSerializer(ModelSerializer):
     class Meta:
         model = SalesOrder
         fields = ['code','fixed','created','productorder_set']
+
+class CustomerSalesOrderSerializer(ModelSerializer):
+    '''
+    plant manager -> report sales order -> data product
+    '''
+    marketing_salesorder_related = ReportSalesOrderSerializer(many=True)
+    class Meta:
+        model = Customer
+        fields = ['name','email','phone','address','marketing_salesorder_related']
+
+
+'''
+serializer for schedule material receipt
+'''
+class MaterialReceiptScheduleSerializer(ModelSerializer):
+
+    class Meta:
+        model = MaterialReceiptSchedule
+        fields = ['quantity','date']
+
+class MaterialSerializer(ModelSerializer):
+    uom = StringRelatedField()
+    supplier = StringRelatedField()
+    class Meta:
+        model = Material
+        fields = ['name','weight','image','spec','length','width','thickness','uom','supplier']
+
+class MaterialOrderSerializer(ModelSerializer):
+    material = MaterialSerializer()
+    materialreceiptschedule_set = MaterialReceiptScheduleSerializer(many=True)
+    class Meta:
+        model = MaterialOrder
+        fields = ['ordered','arrived','material','materialreceiptschedule_set']
+
+class PurchaseOrderMaterialSerializer(ModelSerializer):
+    materialorder_set = MaterialOrderSerializer(many=True)
+
+    class Meta:
+        model = PurchaseOrderMaterial
+        fields = ['code','created','materialorder_set']
+
+
+class SupplierSerializer(ModelSerializer):
+    '''
+    plant manager -> material receipt report
+    '''
+    purchasing_purchaseordermaterial_related = PurchaseOrderMaterialSerializer(many=True)
+
+    class Meta:
+        model = Supplier
+        fields = ['name','email','phone','address','purchasing_purchaseordermaterial_related']
+
+
+
+'''
+serializer for delivery note
+'''
+class ProductOrderSerializer(ModelSerializer):
+    product = StringRelatedField()
+    class Meta:
+        model = ProductOrder
+        fields = ['ordered','delivered','product','sales_order']
+
+class ProductDeliveryNoteCustomerSerializer(ModelSerializer):
+
+    class Meta:
+        model = ProductDeliverCustomer
+        fields = ['quantity','paid','product_order']
+        depth = 2
+
+class DeliveryNoteCustomerSerializer(ModelSerializer):
+    productdelivercustomer_set = ProductDeliveryNoteCustomerSerializer(many=True)
+    class Meta:
+        model = DeliveryNoteCustomer
+        fields = ['code','created','driver','vehicle','productdelivercustomer_set']
+        depth = 1
+
+
+class CustomerDeliveryNoteSerializer(ModelSerializer):
+    ppic_deliverynotecustomer_related = DeliveryNoteCustomerSerializer(many=True)
+    class Meta:
+        model = Customer
+        fields = ['name','email','phone','address','ppic_deliverynotecustomer_related']
+
+
 
 
 

@@ -4,18 +4,21 @@ import requests
 from django.db import connection, reset_queries
 import time
 import functools
+from django.db.models import Prefetch
 
 from django.contrib.auth.models import User,Group,update_last_login
 from django.contrib.auth.hashers import check_password
 from rest_framework import response,status,permissions
 from rest_framework.viewsets import ModelViewSet
 
-from marketing.models import SalesOrder
+from marketing.models import Customer, SalesOrder
+from purchasing.models import Supplier
 
-from .serializer import UserActivitySerializer, UserSerializer,UserManagementSerializer,ReportMrpSerializer,ReportSalesOrderSerializer
+from .serializer import UserActivitySerializer, UserSerializer,UserManagementSerializer,ReportMrpSerializer,SupplierSerializer,CustomerSalesOrderSerializer,CustomerDeliveryNoteSerializer
 from .forms import RegisterForm
 from .models import UserActivity
-from ppic.models import MaterialRequirementPlanning
+
+from ppic.models import DeliveryNoteCustomer, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,Process
 
 CLIENT_ID = '9IwGfEqtmqoIFcFSGz2C1kcX8zNmCVFczPNy0vgk'
 CLIENT_SECRET = 'PlPFwPLscJ6b4c71UUCc0CebfEZf89CJCQqHSWOA3IolreLNfSfjr8NZqCbPfqmQjacCbr30wmvIUIIrUFSYExxKsoSYcgi4B8L65aGMjsATaoPCL0PRD28oq1DtPUYs'
@@ -131,14 +134,54 @@ class UserActivityViewSet(ModelViewSet):
 
 
 class ReportMrpViewSet(ModelViewSet):
+    '''
+    plant manager -> material requirement planning report
+    '''
     serializer_class = ReportMrpSerializer
     permission_classes = [permissions.AllowAny]
     queryset = MaterialRequirementPlanning.objects.all()
 
-class ReportSalesOrderViewSet(ModelViewSet):
-    serializer_class = ReportSalesOrderSerializer
-    permission_classes = [permissions.AllowAny]
-    queryset = SalesOrder.objects.all()
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
 
+class ReportSupplierPurchaseOrderViewSet(ModelViewSet):
+    '''
+    plant manager -> schedule material receipt report
+    '''
+    serializer_class = SupplierSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Supplier.objects.all()
+
+    @queryDebug
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+class ReportCustomerSalesOrderViewSet(ModelViewSet):
+    '''
+    plant manager -> sales report -> sales order
+    '''
+    serializer_class = CustomerSalesOrderSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Customer.objects.prefetch_related(
+        Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related(
+            Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related(
+                Prefetch('product',queryset=Product.objects.prefetch_related('ppic_process_related__warehousewip_set__warehouse_type').prefetch_related('ppic_warehouseproduct_related__warehouse_type')))))))
+
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+    
+class ReportDeliveryNoteCustomerViewSet(ModelViewSet):
+    '''
+    plant manager -> sales report -> delivery note
+    '''
+    serializer_class = CustomerDeliveryNoteSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Customer.objects.prefetch_related(
+        Prefetch('ppic_deliverynotecustomer_related',queryset=DeliveryNoteCustomer.objects.prefetch_related(
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.prefetch_related(
+                Prefetch('product_order',queryset=ProductOrder.objects.select_related('product','sales_order'))))).select_related('driver','vehicle')))
+
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
 
 

@@ -1,5 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from .views import AuthViewSet, ReportSalesOrderViewSet,UserViewSet,UserActivityViewSet,ReportMrpViewSet
+from .views import AuthViewSet,UserViewSet,UserActivityViewSet,ReportMrpViewSet,ReportSupplierPurchaseOrderViewSet,ReportCustomerSalesOrderViewSet,ReportDeliveryNoteCustomerViewSet
 from django.urls import path,include
 
 router = DefaultRouter()
@@ -16,11 +16,17 @@ report_mrp = ReportMrpViewSet.as_view({
     'get':'list'
 })
 
-report_salesorder = ReportSalesOrderViewSet.as_view({
+report_salesorder = ReportCustomerSalesOrderViewSet.as_view({
     'get':'list'
 })
 
+report_purchaseorder = ReportSupplierPurchaseOrderViewSet.as_view({
+    'get':'list'
+})
+
+
 router.register(r'user',UserViewSet,basename='user')
+router.register(r'report-delivery-note',ReportDeliveryNoteCustomerViewSet,basename='report-delivery-note')
 
 urlpatterns = [
     path('',include(router.urls)),
@@ -28,4 +34,6 @@ urlpatterns = [
     path('activity/',user_activity,name='activity'),
     path('report-mrp/',report_mrp,name='reportmrp'),
     path('report-salesorder/',report_salesorder,name='reportsalesorder'),
+    path('report-purchaseorder/',report_purchaseorder,name='reportpurchaseorder'),
+    
 ]

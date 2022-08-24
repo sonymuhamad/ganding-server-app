@@ -1,4 +1,4 @@
-from rest_framework.serializers import ModelSerializer,ValidationError
+from rest_framework.serializers import ModelSerializer,ValidationError,StringRelatedField
 from .models import Customer, SalesOrder
 from ppic.models import DeliverySchedule, Product, ProductOrder
 from django.db.models import Prefetch
@@ -24,11 +24,10 @@ class CustomerManagementSerializer(ModelSerializer):
 class DeliveryScheduleManagementSerializer(ModelSerializer):
     class Meta:
         model = DeliverySchedule
-        fields = ['quantity','date']
+        fields = ['id','quantity','date']
 
 class ProductOrderManagementSerializer(ModelSerializer):
     deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
-
     def create(self, validated_data):
         
         schedule = validated_data.pop('deliveryschedule_set')
@@ -37,10 +36,9 @@ class ProductOrderManagementSerializer(ModelSerializer):
 
         return product_order 
         
-
     class Meta:
         model = ProductOrder
-        fields = ['ordered','product','deliveryschedule_set']
+        fields = ['id','ordered','product','deliveryschedule_set']
 
 class SalesOrderManagementSerializer(ModelSerializer):
     productorder_set = ProductOrderManagementSerializer(many=True)
@@ -60,35 +58,117 @@ class SalesOrderManagementSerializer(ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        temp_delivery_schedule = [] #list 2 dimesion
-        delivery_schedule_objects = []
-
+        print(validated_data)
+        delivery_schedule_objects = [] 
         temp_product_orders = validated_data.pop('productorder_set')
-        product_orders_objects = []
-        
-        for product_order in temp_product_orders:
-            schedule = product_order.pop('deliveryschedule_set')
-            temp_delivery_schedule.append(schedule)
-        
         new_sales_order = SalesOrder.objects.create(**validated_data)
-
+        
         for product_order in temp_product_orders:
-            product_orders_objects.append(ProductOrder.objects.create(sales_order=new_sales_order,**product_order))    
+            schedules = product_order.pop('deliveryschedule_set')
+            new_product_order = ProductOrder.objects.create(sales_order=new_sales_order,**product_order)
+            
+            for schedule in schedules:
+                delivery_schedule_objects.append(DeliverySchedule(**schedule,product_order=new_product_order))     
 
-
-        for i in range(len(temp_delivery_schedule)):
-            for j in range(len(temp_delivery_schedule[i])):
-                delivery_schedule_objects.append(DeliverySchedule(**temp_delivery_schedule[i][j],product_order=product_orders_objects[i]))
-
-        # print(delivery_schedule_objects)
         DeliverySchedule.objects.bulk_create(delivery_schedule_objects)
-        
         return new_sales_order
+    
+    def clear_record(self,lst:list)->None:
+        for instance in lst:
+            instance.delete()
+        return 
+    
+    def update_many(self,object,lst_of_objects:list,fields:list) -> None:
+        object.objects.bulk_update(lst_of_objects,fields)
+        return 
+
+    def insert_many(self,object,lst_of_objects:list) -> None:
+        object.objects.bulk_create(lst_of_objects)
+        return
+
+    def update(self, instance, validated_data):
+
+        old_product_order = instance.productorder_set.all()
+        len_old_product = len(old_product_order) - 1 
+
+        insert_new_schedule = []
+        updated_schedule =[]
+        deleted_schedule = []
+
+        new_product_order = validated_data.pop('productorder_set')
+        len_new_product_order = len(new_product_order)
+        deleted_product_order = []
+        updated_product_order = []
         
-    
-    
+        instance.code = validated_data['code']
+        instance.save()
+
+        product_order_object = instance.productorder_set.all()
+
+        
+        for i in range(len_new_product_order):
+            new_schedules = new_product_order[i].pop('deliveryschedule_set')
+            len_new_schedules = len(new_schedules) 
+            
+            if i > len_old_product:
+                instance_product_order = ProductOrder.objects.create(sales_order=instance,**new_product_order[i])
+            else:
+                instance_product_order = product_order_object[i]
+                instance_product_order.ordered = new_product_order[i]['ordered']
+                instance_product_order.product = new_product_order[i]['product']
+                updated_product_order.append(instance_product_order)
+                
+                old_schedule = instance_product_order.deliveryschedule_set.all()
+                len_old_schedule = len(old_schedule) - 1
+
+            for j in range(len_new_schedules):
+                
+                if i > len_old_product:
+                    insert_new_schedule.append(DeliverySchedule(**new_schedules[j],instance_product_order=instance_product_order))     
+
+                else:
+                    if j > len_old_schedule:
+                        insert_new_schedule.append(DeliverySchedule(**new_schedules[j],product_order=instance_product_order))
+                    else:
+                        instance_schedule = old_schedule[j]
+                        instance_schedule.date = new_schedules[j]['date']
+                        instance_schedule.quantity = new_schedules[j]['quantity']
+                        updated_schedule.append(instance_schedule)
+
+            deleted_schedule = deleted_schedule[:] + old_schedule[j+1:]         
+        deleted_product_order = deleted_product_order[:] + old_product_order[i+1:]
+
+        ProductOrder.objects.bulk_update(updated_product_order,['ordered','product'])
+        DeliverySchedule.objects.bulk_update(updated_schedule,['quantity','date'])
+        DeliverySchedule.objects.bulk_create(insert_new_schedule)
+
+        self.clear_record(deleted_schedule)
+        self.clear_record(deleted_product_order)
+        
+        return instance 
+        
+
 
     class Meta:
         model = SalesOrder
-        fields = ['code','customer','productorder_set']
+        fields = ['id','code','customer','productorder_set']
 
+
+
+
+
+class ProductOrderReadOnlySerializer(ModelSerializer):
+    deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
+        
+    class Meta:
+        model = ProductOrder
+        fields = ['id','ordered','product','deliveryschedule_set']
+        depth = 1
+
+class SalesOrderReadOnlySerializer(ModelSerializer):
+    productorder_set = ProductOrderReadOnlySerializer(many= True)
+
+    class Meta:
+        model = SalesOrder
+        fields = ['id','code','customer','productorder_set']
+        depth = 1

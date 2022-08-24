@@ -1,10 +1,40 @@
 from ast import arg
-from rest_framework.viewsets import ModelViewSet
-from .serializer import CustomerSerializer,SalesOrderManagementSerializer,SalesOrderSerializer,ProductOrderManagementSerializer
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
+from .serializer import CustomerSerializer,SalesOrderManagementSerializer, SalesOrderReadOnlySerializer
 from .models import Customer, SalesOrder
-from ppic.models import Product
+from ppic.models import Product, ProductOrder
 from rest_framework import response,status,permissions
 from django.db.models import Prefetch
+
+from django.db import connection, reset_queries
+import time
+import functools
+from django.db.models import Prefetch
+
+
+def queryDebug(func):
+
+    @functools.wraps(func)
+    def inner_func(*args, **kwargs):
+
+        reset_queries()
+
+        start_queries = len(connection.queries)
+
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        end = time.perf_counter()
+
+        end_queries = len(connection.queries)
+
+        print(f"Function : {func.__name__}")
+        print(f"Number of Queries : {end_queries - start_queries}")
+        print(f"Finished in : {(end - start):.2f}s")
+
+        return result
+
+    return inner_func
+
 
 class CustomerViewset(ModelViewSet):
     queryset = Customer.objects.all()
@@ -27,26 +57,13 @@ class CustomerViewset(ModelViewSet):
         salesorder = SalesOrder.objects.filter(done=0,customer=customer).first()
         return salesorder
 
-class SalesOrderViewSet(ModelViewSet):
+class SalesOrderManagementViewSet(ModelViewSet):
     serializer_class = SalesOrderManagementSerializer
-    queryset = SalesOrder.objects.all()
     permission_classes = [permissions.AllowAny]
+    queryset = SalesOrder.objects.prefetch_related(Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product'))).select_related('customer')
 
-    def create(self, request, *args, **kwargs):
-        seriz = SalesOrderManagementSerializer(data=request.data)
-        
-        if seriz.is_valid():
-            seriz.save()
-            return response.Response({'data':seriz.data},status=status.HTTP_201_CREATED)
-        else:
-            print(seriz.errors)
-            return response.Response(seriz.errors,status=status.HTTP_400_BAD_REQUEST)
-
-         
-
-
-
-
-
-
+class SalesOrderReadOnlyViewSet(ReadOnlyModelViewSet):
+    serializer_class = SalesOrderReadOnlySerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = SalesOrder.objects.prefetch_related(Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product'))).select_related('customer')
 

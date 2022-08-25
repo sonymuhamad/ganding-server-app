@@ -1,6 +1,6 @@
 from rest_framework.serializers import ModelSerializer,ValidationError,StringRelatedField
 from .models import Customer, SalesOrder
-from ppic.models import DeliverySchedule, Product, ProductOrder
+from ppic.models import DeliverySchedule, Product, ProductOrder,DeliveryNoteCustomer,ProductDeliverCustomer
 from django.db.models import Prefetch
 
 class SalesOrderSerializer(ModelSerializer):
@@ -21,12 +21,21 @@ class CustomerManagementSerializer(ModelSerializer):
         model = Customer
         fields = ['id','name','email','phone','address','marketing_salesorder_related']
 
+
+### Customer sales order management serializer
+
 class DeliveryScheduleManagementSerializer(ModelSerializer):
+    '''
+    post , put
+    '''
     class Meta:
         model = DeliverySchedule
         fields = ['id','quantity','date']
 
 class ProductOrderManagementSerializer(ModelSerializer):
+    '''
+    post , put
+    '''
     deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
     def create(self, validated_data):
         
@@ -41,6 +50,9 @@ class ProductOrderManagementSerializer(ModelSerializer):
         fields = ['id','ordered','product','deliveryschedule_set']
 
 class SalesOrderManagementSerializer(ModelSerializer):
+    '''
+    post , put
+    '''
     productorder_set = ProductOrderManagementSerializer(many=True)
 
     def validate_productorder_set(self,attrs):
@@ -153,11 +165,16 @@ class SalesOrderManagementSerializer(ModelSerializer):
         model = SalesOrder
         fields = ['id','code','customer','productorder_set']
 
+### Customer sales order management serializer
 
 
 
+### Customer sales order read only serializer
 
 class ProductOrderReadOnlySerializer(ModelSerializer):
+    '''
+    get
+    '''
     deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
         
     class Meta:
@@ -166,9 +183,92 @@ class ProductOrderReadOnlySerializer(ModelSerializer):
         depth = 1
 
 class SalesOrderReadOnlySerializer(ModelSerializer):
+    '''
+    get
+    '''
     productorder_set = ProductOrderReadOnlySerializer(many= True)
-
     class Meta:
         model = SalesOrder
         fields = ['id','code','customer','productorder_set']
+
+
+class CustomerSalesOrderReadOnlySerializer(ModelSerializer):
+    '''
+    get
+    '''
+    marketing_salesorder_related = SalesOrderReadOnlySerializer(many=True)
+    class Meta:
+        model = Customer
+        fields = ['id','name','phone','address','marketing_salesorder_related']
+
+### Customer sales order read only serializer
+
+
+
+### Customer delivery read only serializer
+
+class DeliveryProductCustomerSerializer(ModelSerializer):
+    '''
+    get
+    '''
+    class Meta:
+        model = ProductDeliverCustomer
+        fields = ['id','quantity','paid','product_order']
         depth = 1
+
+class DeliveryNoteCustomerSerializer(ModelSerializer):
+    '''
+    get
+    '''
+    productdelivercustomer_set = DeliveryProductCustomerSerializer(many=True)
+    class Meta:
+        model = DeliveryNoteCustomer
+        fields = ['id','code','created','note','driver','vehicle','productdelivercustomer_set']
+        depth = 1
+
+class DeliveryCustomerSerializer(ModelSerializer):
+    '''
+    get
+    '''
+    ppic_deliverynotecustomer_related = DeliveryNoteCustomerSerializer(many = True)
+    class Meta:
+        model = Customer
+        fields = ['id','name','email','phone','address','ppic_deliverynotecustomer_related']
+
+### Customer delivery read only serializer
+
+
+### Customer delivery note management serializer
+
+class DeliveryProductCustomerManagementSerializer(ModelSerializer):
+    '''
+    put post
+    '''
+    class Meta:
+        model = ProductDeliverCustomer
+        fields = ['id','paid']
+
+class DeliveryNoteCustomerManagementSerializer(ModelSerializer):
+    '''
+    put post
+    '''
+    class Meta:
+        model = DeliveryNoteCustomer
+        fields = ['id','code','note']
+
+### Customer delivery note management serializer
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

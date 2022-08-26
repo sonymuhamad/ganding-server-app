@@ -55,8 +55,19 @@ class SalesOrderManagementSerializer(ModelSerializer):
     '''
     productorder_set = ProductOrderManagementSerializer(many=True)
 
-    def validate_productorder_set(self,attrs):
+    def validate(self, attrs):
 
+        fixed = attrs.get('fixed',None)
+        if fixed is None:
+            return super().validate(attrs)
+        else:
+            if fixed == True:
+                raise ValidationError('Sales order tersebut sudah fix, perubahan data tidak diizinkan')
+            else:
+                return super().validate(attrs)
+
+    def validate_productorder_set(self,attrs):
+        
         count = 0
 
         for productorder in attrs:
@@ -64,7 +75,7 @@ class SalesOrderManagementSerializer(ModelSerializer):
             for schedule in productorder['deliveryschedule_set']:
                 temp += schedule['quantity']
             if temp > productorder['ordered']:
-                raise ValidationError(f'quantity pada jadwal kedatangan melebihi quantity pada pesanan product {count}')
+                raise ValidationError(f'Jumlah product pada jadwal pengiriman melebihi jumlah product pada pesanan {count}')
             count += 1
 
         return attrs
@@ -163,7 +174,7 @@ class SalesOrderManagementSerializer(ModelSerializer):
 
     class Meta:
         model = SalesOrder
-        fields = ['id','code','customer','productorder_set']
+        fields = ['id','code','customer','productorder_set','fixed']
 
 ### Customer sales order management serializer
 
@@ -189,7 +200,7 @@ class SalesOrderReadOnlySerializer(ModelSerializer):
     productorder_set = ProductOrderReadOnlySerializer(many= True)
     class Meta:
         model = SalesOrder
-        fields = ['id','code','customer','productorder_set']
+        fields = ['id','code','customer','productorder_set','fixed']
 
 
 class CustomerSalesOrderReadOnlySerializer(ModelSerializer):

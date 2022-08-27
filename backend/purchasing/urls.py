@@ -1,7 +1,6 @@
 from rest_framework.routers import DefaultRouter
-# from .views import CustomerViewset
 from django.urls import path,include
-from .views import MrpReadOnlyViewSet,PurchaseOrderReadOnlyViewSet,PurchaseOrderManagementViewSet,MaterialOrderManagementViewSet
+from .views import MrpReadOnlyViewSet,PurchaseOrderReadOnlyViewSet,PurchaseOrderManagementViewSet,MaterialOrderManagementViewSet,SupplierManagementViewSet
 
 router = DefaultRouter()
 
@@ -27,9 +26,7 @@ mo_management_put_and_delete = MaterialOrderManagementViewSet.as_view({
 
 router.register(r'mrp-detail',MrpReadOnlyViewSet,basename='mrp_detail')
 router.register(r'purchaseorder-detail',PurchaseOrderReadOnlyViewSet,basename='purchaseorder-detail')
-
-# router.register(r'customer',CustomerViewset,basename='customer')
-
+router.register(r'supplier',SupplierManagementViewSet,basename='supplier')
 
 urlpatterns = [
    path('',include(router.urls)),

@@ -100,14 +100,6 @@ class SalesOrderManagementSerializer(ModelSerializer):
         for instance in lst:
             instance.delete()
         return 
-    
-    def update_many(self,object,lst_of_objects:list,fields:list) -> None:
-        object.objects.bulk_update(lst_of_objects,fields)
-        return 
-
-    def insert_many(self,object,lst_of_objects:list) -> None:
-        object.objects.bulk_create(lst_of_objects)
-        return
 
     def update(self, instance, validated_data):
 

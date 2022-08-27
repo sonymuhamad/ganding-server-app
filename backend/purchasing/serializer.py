@@ -116,9 +116,8 @@ class MaterialOrderManagementSerializer(BaseMaterialOrderSerializer):
         
         if arrived is None or arrived <= ordered:
             return super().validate(attrs)
-
-        elif ordered < arrived:
-            raise ValidationError('Jumlah kedatangan material melebihi pesanan material')
+            
+        raise ValidationError('Jumlah kedatangan material melebihi pesanan material')
 
 
     def validate_materialreceiptschedule_set(self,attrs):

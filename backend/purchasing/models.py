@@ -14,6 +14,7 @@ class AbstractSupplier(models.Model):
 
 class PurchaseOrderMaterial(AbstractCode,AbstractSupplier,AbstractCreated):
     done = models.BooleanField(default=False)
+
     class Meta(AbstractCode.Meta,AbstractSupplier.Meta,AbstractCreated.Meta):
         pass
     

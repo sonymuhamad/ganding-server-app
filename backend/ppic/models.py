@@ -66,12 +66,6 @@ class AbstractProduct(models.Model):
     class Meta:
         abstract = True
 
-class WarehouseProduct(AbstractWarehouse,AbstractProduct):
-    '''
-    '''
-    class Meta(AbstractWarehouse.Meta,AbstractProduct.Meta):
-        unique_together = [['warehouse_type','product']]
-
 class ProductOrder(AbstractProduct):
     '''
     '''
@@ -125,12 +119,11 @@ class Process(AbstractProduct):
     class Meta(AbstractProduct.Meta):
         ordering = ['order']
 
-class WarehouseWip(AbstractWarehouse,AbstractProduct):
+class WarehouseProduct(AbstractWarehouse,AbstractProduct):
     '''
-    warehouse to store stock of work in process every product
     '''
-    process = models.ForeignKey(Process,on_delete=models.CASCADE)
-
+    process = models.OneToOneField(Process,on_delete=models.CASCADE,null=True)
+    
     class Meta(AbstractWarehouse.Meta,AbstractProduct.Meta):
         unique_together = [['warehouse_type','product']]
 

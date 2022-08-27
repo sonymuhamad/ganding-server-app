@@ -18,7 +18,7 @@ from .serializer import UserActivitySerializer, UserSerializer,UserManagementSer
 from .forms import RegisterForm
 from .models import UserActivity
 
-from ppic.models import DeliveryNoteCustomer, DetailMrp, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,MaterialOrder, WarehouseProduct,Process, WarehouseWip
+from ppic.models import DeliveryNoteCustomer, DetailMrp, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,MaterialOrder, WarehouseProduct,Process
 
 CLIENT_ID = '9IwGfEqtmqoIFcFSGz2C1kcX8zNmCVFczPNy0vgk'
 CLIENT_SECRET = 'PlPFwPLscJ6b4c71UUCc0CebfEZf89CJCQqHSWOA3IolreLNfSfjr8NZqCbPfqmQjacCbr30wmvIUIIrUFSYExxKsoSYcgi4B8L65aGMjsATaoPCL0PRD28oq1DtPUYs'
@@ -138,7 +138,8 @@ class ReportMrpViewSet(ModelViewSet):
     '''
     serializer_class = ReportMrpSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = MaterialRequirementPlanning.objects.select_related('material').prefetch_related(Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product')))
+    queryset = MaterialRequirementPlanning.objects.select_related('material').prefetch_related(
+        Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product')))
 
     
 class ReportSupplierPurchaseOrderViewSet(ModelViewSet):
@@ -155,16 +156,14 @@ class ReportCustomerSalesOrderViewSet(ReadOnlyModelViewSet):
     '''
     plant manager -> sales report -> sales order
     '''
+    
     serializer_class = CustomerSalesOrderSerializer
     permission_classes = [permissions.AllowAny]
     queryset = Customer.objects.prefetch_related(
         Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related(
             Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related(
                 Prefetch('product',queryset=Product.objects.prefetch_related(
-                    Prefetch('ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type')),
-                        Prefetch('ppic_process_related',queryset=Process.objects.prefetch_related(
-                            Prefetch('warehousewip_set',queryset=WarehouseWip.objects.select_related('warehouse_type')))))))))))
-
+                        Prefetch('ppic_process_related',queryset=Process.objects.select_related('warehouseproduct__warehouse_type'))).prefetch_related(Prefetch('ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type')))))))))
 
 class ReportDeliveryNoteCustomerViewSet(ReadOnlyModelViewSet):
     '''

@@ -4,7 +4,7 @@ from .models import UserActivity,Activity
 from oauth2_provider.models import AccessToken
 from django.contrib.auth.models import User,Group
 
-from ppic.models import MaterialRequirementPlanning,DetailMrp,Product,WarehouseProduct,Process,ProductOrder,WarehouseWip,Material,MaterialOrder,MaterialReceiptSchedule,DeliveryNoteCustomer,ProductDeliverCustomer
+from ppic.models import MaterialRequirementPlanning,DetailMrp,Product,WarehouseProduct,Process,ProductOrder,Material,MaterialOrder,MaterialReceiptSchedule,DeliveryNoteCustomer,ProductDeliverCustomer
 
 from marketing.models import SalesOrder,Customer
 
@@ -78,20 +78,20 @@ serializer for sales order
 class WarehouseWipSerializer(ModelSerializer):
     warehouse_type = StringRelatedField()
     class Meta:
-        model = WarehouseWip
+        model = WarehouseProduct
         fields = ['quantity','warehouse_type']
 
 class WarehouseProductSerializer(ModelSerializer):
     warehouse_type = StringRelatedField()
     class Meta:
-        model = WarehouseWip
+        model = WarehouseProduct
         fields = ['quantity','warehouse_type']
 
 class ProcessSerializer(ModelSerializer):
-    warehousewip_set = WarehouseWipSerializer(many=True)
+    warehouseproduct = WarehouseWipSerializer()
     class Meta:
         model= Process
-        fields = ['process_name','order','process_type','product','warehousewip_set']
+        fields = ['process_name','order','process_type','product','warehouseproduct']
          
 
 class ProductSerializer(ModelSerializer):

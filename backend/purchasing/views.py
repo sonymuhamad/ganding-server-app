@@ -11,14 +11,28 @@ from ppic.models import Material,MaterialOrder
 
 from .models import Supplier,PurchaseOrderMaterial
 
+def invalid() -> None:
+    raise ValidationError('delete failed due to data integrity || hapus data gagal')
+
+
+def validate_mo(queryset):
+    for mo in queryset:
+            if mo.arrived > 0:
+                invalid()
+
+def validate_po(queryset):
+
+    for po in queryset:
+        if po.done:
+            invalid()
+        queryset_mo = po.materialorder_set.all() 
+        validate_mo(queryset_mo)
+
 
 class SupplierManagementViewSet(ModelViewSet):
     serializer_class = BaseSupplierSerializer
     permission_classes = [AllowAny]
     queryset = Supplier.objects.all()
-
-    def invalid(self) -> None:
-        raise ValidationError('delete failed due to data integrity || hapus data gagal')
 
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']
@@ -28,21 +42,17 @@ class SupplierManagementViewSet(ModelViewSet):
                 Prefetch('ppic_material_related',queryset=Material.objects.prefetch_related('ppic_requirementmaterial_related').prefetch_related('ppic_warehousematerial_related').filter(Q(ppic_requirementmaterials__isnull=False) | Q(ppic_warehousematerials__isnull=False) )))
 
         instance_supplier = get_object_or_404(queryset,pk=pk)
-        
-        for po in instance_supplier.purchasing_purchaseordermaterial_related.all():
-            if po.done:
-                self.invalid()
-            for mo in po.materialorder_set.all():
-                if mo.arrived > 0:
-                    self.invalid()
+        queryset_po = instance_supplier.purchasing_purchaseordermaterial_related.all()
+
+        validate_po(queryset_po)
         
         for material in instance_supplier.ppic_material_related.all():
             for requirementmaterial in material.ppic_requirementmaterial_related.all():
                 if requirementmaterial.conversion > 0:
-                    self.invalid()
+                    invalid()
             for whmaterial in material.ppic_warehousematerial_related.all():
                 if whmaterial.quantity > 0:
-                    self.invalid()
+                    invalid()
 
         return super().destroy(request, *args, **kwargs)
 
@@ -75,12 +85,12 @@ class PurchaseOrderManagementViewSet(ModelViewSet):
         pk = kwargs['pk']
         instance_po = self.queryset
         instance_po = get_object_or_404(instance_po,pk=pk)
-
-        instance_mos = instance_po.materialorder_set.all()
         
-        for mo in instance_mos:
-            if mo.arrived > 0:
-                raise ValidationError('hapus data gagal, sudah ada kedatangan pada purchase order tersebut')
+        if instance_po.done:
+            invalid()
+        
+        instance_mo = instance_po.materialorder_set.all()
+        validate_mo(instance_mo)
 
         return super().destroy(request, *args, **kwargs)
 
@@ -97,8 +107,8 @@ class MaterialOrderManagementViewSet(ModelViewSet):
         instance_mo = get_object_or_404(instance_mos,pk=pk)
 
         if instance_mo.arrived > 0:
-             raise ValidationError('hapus data gagal, sudah ada kedatangan pada pesanan material tersebut')
-
+             invalid()
+             
         return super().destroy(request, *args, **kwargs)
         
 

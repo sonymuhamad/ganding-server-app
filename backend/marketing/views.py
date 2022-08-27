@@ -13,6 +13,21 @@ from .models import Customer, SalesOrder
 from ppic.models import Product, ProductOrder,ProductDeliverCustomer,DeliveryNoteCustomer
 
 
+def invalid() -> None:
+    raise ValidationError('delete failed due to data integrity || hapus data gagal')
+
+def validate_productorder(queryset_po)-> None:
+    for productorder in queryset_po:
+        if productorder.delivered > 0:
+            invalid()
+            
+def validate_so(queryset) -> None:
+    for so in queryset:
+        if so.done:
+            invalid()
+        queryset_productorder = so.productorder_set.all()
+        validate_productorder(queryset_productorder)
+        
 
 
 def queryDebug(func):
@@ -47,9 +62,6 @@ class CustomerViewset(ModelViewSet):
     permission_classes = [permissions.AllowAny]
     queryset = Customer.objects.all()
 
-    def invalid(self) -> None:
-        raise ValidationError('delete failed due to data integrity || hapus data gagal')
-
     def destroy(self, request, *args, **kwargs):
         tes = self.integrity_check(kwargs)
         pk = kwargs['pk']
@@ -59,20 +71,16 @@ class CustomerViewset(ModelViewSet):
 
         instance_customer = get_object_or_404(queryset,pk=pk)
         
-        for so in instance_customer.marketing_salesorder_related.all():
-            if so.done:
-                self.invalid()
-            for productorder in so.productorder_set.all():
-                if productorder.delivered > 0:
-                    self.invalid()
-        
+        queryset_so = instance_customer.marketing_salesorder_related.all()
+        validate_so(queryset_so)
+
         for product in instance_customer.ppic_product_related.all():
             for requirementproduct in product.ppic_requirementproduct_related.all():
                 if requirementproduct.conversion > 0:
-                    self.invalid()
+                    invalid()
             for whproduct in product.ppic_warehouseproduct_related.all():
                 if whproduct.quantity > 0:
-                    self.invalid()
+                    invalid()
 
         return super().destroy(request, *args, **kwargs)        
         
@@ -85,6 +93,17 @@ class SalesOrderManagementViewSet(ModelViewSet):
     queryset = SalesOrder.objects.prefetch_related(
         Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product'))).select_related('customer')
 
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_so = get_object_or_404(self.queryset,pk=pk)
+        
+        if instance_so.done:
+            invalid()
+
+        queryset_productorder = instance_so.productorder_set.all()
+        validate_productorder(queryset_productorder)
+
+        return super().destroy(request, *args, **kwargs)
 
 class SalesOrderReadOnlyViewSet(ReadOnlyModelViewSet):
     '''

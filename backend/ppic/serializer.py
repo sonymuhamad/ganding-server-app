@@ -1,8 +1,10 @@
-from ast import Mod
-from rest_framework.serializers import ModelSerializer
+from rest_framework.serializers import ModelSerializer,StringRelatedField,ValidationError
+
 # from .models import DeliveryNoteCustomer, DeliveryNoteSubcont, DeliverySchedule, DetailMrp, Driver, Material, MaterialOrder, MaterialReceipt, MaterialRequirementPlanning, Process, Product, ProductDeliverCustomer, ProductDeliverSubcont, ProductOrder, RequirementMaterial, RequirementProduct, Vehicle, WarehouseMaterial, WarehouseProduct,MaterialReceiptSchedule,DeliveryNoteMaterial
 
 from .models import *
+from marketing.models import Customer
+from manager.shortcuts import invalid
 
 class DriverSerializer(ModelSerializer):
     class Meta:
@@ -15,14 +17,168 @@ class VehicleSerializer(ModelSerializer):
         fields = ['licence_part_number']
 
 
-###### Serializers for product
+##################
+#### Product Read Only Seriz
+class WarehouseProductReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = WarehouseProduct
+        fields = ['id','quantity','warehouse_type']
+        depth = 1
 
-class ProductSerializer(ModelSerializer):
+class RequirementMaterialReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = RequirementMaterial
+        fields = ['id','conversion','material']
+        depth = 1
+
+class RequirementProductReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = RequirementProduct
+        fields = ['id','conversion','product']
+        depth = 1
+
+class ProcessReadOnlySerializer(ModelSerializer):
+    warehouseproduct_set = WarehouseProductReadOnlySerializer(many=True)
+    requirementproduct_set = RequirementProductReadOnlySerializer(many=True)
+    requirementmaterial_set = RequirementMaterialReadOnlySerializer(many=True)
+
+    class Meta:
+        model = Process
+        fields = ['id','process_name','order','process_type','warehouseproduct_set','requirementproduct_set','requirementmaterial_set']
+        depth = 1
+
+class ProductReadOnlySerializer(ModelSerializer):
+    ppic_process_related = ProcessReadOnlySerializer(many=True)
 
     class Meta:
         model = Product
-        fields = ['name','customer','type','process','price','code','weight','image']
+        fields = ['id','code','name','weight','image','process','price','ppic_process_related','type']
+        depth = 1
 
+class ProductCustomerReadOnlySerializer(ModelSerializer):
+    ppic_product_related = ProductReadOnlySerializer(many=True)
+
+    class Meta:
+        model = Customer
+        fields = ['id','name','email','phone','address','ppic_product_related']
+
+#### Product read only seriz
+######
+
+
+
+#######
+### product management seriz
+
+class WarehouseProductManagementSerializer(ModelSerializer):
+    class Meta:
+        model = WarehouseProduct
+        fields = '__all__'
+
+class RequirementMaterialManagementSerializer(ModelSerializer):
+    class Meta:
+        model = RequirementMaterial
+        exclude = ['process']
+
+class RequirementProductManagementSerializer(ModelSerializer):
+    class Meta:
+        model = RequirementProduct
+        exclude = ['process']
+
+class ProcessManagementSerializer(ModelSerializer):
+    
+    requirementproduct_set = RequirementProductManagementSerializer(many=True)
+    requirementmaterial_set = RequirementMaterialManagementSerializer(many=True)
+    class Meta:
+        model = Process
+        fields = ['id','process_name','process_type','requirementproduct_set','requirementmaterial_set']
+
+class ProductManagementSerializer(ModelSerializer):
+    ppic_process_related = ProcessManagementSerializer(many=True)
+
+    def validate_ppic_process_related(self,attrs):
+        len_attrs = len(attrs)
+        if len_attrs == 0:
+            invalid('Product setidaknya memiliki satu proses')
+        
+        requirementmaterial = attrs[0]['requirementmaterial_set']
+        len_requirement_material = len(requirementmaterial)
+        if len_requirement_material == 0:
+            invalid('Proses pertama setidaknya memiliki satu kebutuhan material')
+        
+        return attrs
+
+    def update(self, instance, validated_data):
+        '''
+        update product
+        '''
+        return super().update(instance, validated_data)
+
+    def create(self, validated_data):
+        '''
+        create product -> process -> requirement material & requirement product & warehouse product
+        '''
+        many_process = validated_data.pop('ppic_process_related')
+        len_process = len(many_process)
+
+        req_material_bulk = []
+        req_product_bulk = []
+        whproduct_bulk = []
+        order = 1
+
+        instance_product = Product.objects.create(**validated_data,process=len_process)
+        wh_type_subcont = WarehouseType.objects.get(id=2)
+
+        for each_process in many_process:
+            many_req_material = each_process.pop('requirementmaterial_set')
+            many_req_product = each_process.pop('requirementproduct_set')
+            instance_process = Process.objects.create(**each_process,product=instance_product,order=order)
+            process_type = instance_process.process_type.name
+
+            for req_material in many_req_material:
+                req_material_bulk.append(RequirementMaterial(**req_material,process=instance_process))
+            for req_product in many_req_product:
+                req_product_bulk.append(RequirementProduct(**req_product,process=instance_process))
+            
+            wh_wip_type,created = WarehouseType.objects.get_or_create(id=order+2,name=f'Wip{order}')
+            
+            wh_product = {
+                'quantity':0,
+                'process':instance_process,
+                'product':instance_product,
+                'warehouse_type':wh_wip_type,
+            }
+
+            if process_type == 'subcont' or process_type == 'Subcont':
+                whproduct_bulk.append(WarehouseProduct(**wh_product))
+
+                wh_product['warehouse_type'] = wh_type_subcont
+                whproduct_bulk.append(WarehouseProduct(**wh_product))
+            else:
+                whproduct_bulk.append(WarehouseProduct(**wh_product))
+
+            order += 1
+
+        RequirementMaterial.objects.bulk_create(req_material_bulk)
+        RequirementProduct.objects.bulk_create(req_product_bulk)
+        WarehouseProduct.objects.bulk_create(whproduct_bulk)
+
+        return instance_product
+
+    class Meta:
+        model = Product
+        exclude = ['process']
+
+
+### Product management seriz
+######
+
+
+
+
+
+
+###### Serializers for product
 
 class ProductOrderSerializer(ModelSerializer):
     class Meta:

@@ -122,7 +122,7 @@ class Process(AbstractProduct):
 class WarehouseProduct(AbstractWarehouse,AbstractProduct):
     '''
     '''
-    process = models.OneToOneField(Process,on_delete=models.CASCADE,null=True)
+    process = models.ForeignKey(Process,on_delete=models.CASCADE)
     
     class Meta(AbstractWarehouse.Meta,AbstractProduct.Meta):
         unique_together = [['warehouse_type','product']]

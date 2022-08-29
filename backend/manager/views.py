@@ -163,7 +163,8 @@ class ReportCustomerSalesOrderViewSet(ReadOnlyModelViewSet):
         Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related(
             Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related(
                 Prefetch('product',queryset=Product.objects.prefetch_related(
-                        Prefetch('ppic_process_related',queryset=Process.objects.select_related('warehouseproduct__warehouse_type'))).prefetch_related(Prefetch('ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type')))))))))
+                        Prefetch('ppic_process_related',queryset=Process.objects.prefetch_related(Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type'))))).prefetch_related(Prefetch('ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type')))))))))
+
 
 class ReportDeliveryNoteCustomerViewSet(ReadOnlyModelViewSet):
     '''

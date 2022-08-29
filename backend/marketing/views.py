@@ -9,12 +9,11 @@ import time
 from django.db import connection, reset_queries
 from django.db.models import Prefetch,Q
 
+from manager.shortcuts import invalid
 from .models import Customer, SalesOrder
 from ppic.models import Product, ProductOrder,ProductDeliverCustomer,DeliveryNoteCustomer
 
 
-def invalid() -> None:
-    raise ValidationError('delete failed due to data integrity || hapus data gagal')
 
 def validate_productorder(queryset_po)-> None:
     for productorder in queryset_po:

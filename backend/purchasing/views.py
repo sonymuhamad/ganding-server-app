@@ -10,9 +10,7 @@ from .serializer import SupplierMrpReadOnlySerializer,SupplierPurchaseOrderReadO
 from ppic.models import Material,MaterialOrder
 
 from .models import Supplier,PurchaseOrderMaterial
-
-def invalid() -> None:
-    raise ValidationError('delete failed due to data integrity || hapus data gagal')
+from manager.shortcuts import invalid
 
 
 def validate_mo(queryset):

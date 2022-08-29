@@ -75,11 +75,6 @@ class ReportMrpSerializer(ModelSerializer):
 '''
 serializer for sales order
 '''
-class WarehouseWipSerializer(ModelSerializer):
-    warehouse_type = StringRelatedField()
-    class Meta:
-        model = WarehouseProduct
-        fields = ['quantity','warehouse_type']
 
 class WarehouseProductSerializer(ModelSerializer):
     warehouse_type = StringRelatedField()
@@ -88,10 +83,10 @@ class WarehouseProductSerializer(ModelSerializer):
         fields = ['quantity','warehouse_type']
 
 class ProcessSerializer(ModelSerializer):
-    warehouseproduct = WarehouseWipSerializer()
+    warehouseproduct_set = WarehouseProductSerializer(many=True)
     class Meta:
         model= Process
-        fields = ['process_name','order','process_type','product','warehouseproduct']
+        fields = ['process_name','order','process_type','product','warehouseproduct_set']
          
 
 class ProductSerializer(ModelSerializer):

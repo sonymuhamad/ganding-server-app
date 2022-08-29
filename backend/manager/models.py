@@ -18,7 +18,7 @@ class AbstractQuantity(models.Model):
     quantity = models.PositiveBigIntegerField()
     
     def __str__(self) -> str:
-        return self.quantity
+        return str(self.quantity)
     
     class Meta:
         abstract = True
@@ -29,7 +29,6 @@ class AbstractSchedule(AbstractQuantity):
     
     class Meta:
         abstract = True
-
 
 class AbstractCode(models.Model):
     code = models.CharField(max_length=255,unique=True)

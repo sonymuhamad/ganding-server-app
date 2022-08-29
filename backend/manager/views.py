@@ -4,18 +4,21 @@ import requests
 from django.db import connection, reset_queries
 import time
 import functools
+from django.db.models import Prefetch
 
-from django.contrib.auth.models import User,Group,update_last_login
+from django.contrib.auth.models import User,update_last_login
 from django.contrib.auth.hashers import check_password
 from rest_framework import response,status,permissions
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
 
-from marketing.models import SalesOrder
+from marketing.models import Customer, SalesOrder
+from purchasing.models import Supplier,PurchaseOrderMaterial
 
-from .serializer import UserActivitySerializer, UserSerializer,UserManagementSerializer,ReportMrpSerializer,ReportSalesOrderSerializer
+from .serializer import UserActivitySerializer, UserSerializer,UserManagementSerializer,ReportMrpSerializer,SupplierSerializer,CustomerSalesOrderSerializer,CustomerDeliveryNoteSerializer
 from .forms import RegisterForm
 from .models import UserActivity
-from ppic.models import MaterialRequirementPlanning
+
+from ppic.models import DeliveryNoteCustomer, DetailMrp, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,MaterialOrder, WarehouseProduct,Process
 
 CLIENT_ID = '9IwGfEqtmqoIFcFSGz2C1kcX8zNmCVFczPNy0vgk'
 CLIENT_SECRET = 'PlPFwPLscJ6b4c71UUCc0CebfEZf89CJCQqHSWOA3IolreLNfSfjr8NZqCbPfqmQjacCbr30wmvIUIIrUFSYExxKsoSYcgi4B8L65aGMjsATaoPCL0PRD28oq1DtPUYs'
@@ -104,7 +107,7 @@ class AuthViewSet(ModelViewSet):
 class UserViewSet(ModelViewSet):
     serializer_class = UserManagementSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = User.objects.prefetch_related('groups').all()
+    queryset = User.objects.prefetch_related('groups')
 
     def create(self, request, *args, **kwargs):
 
@@ -123,22 +126,56 @@ class UserViewSet(ModelViewSet):
             return response.Response(respons,status=status.HTTP_201_CREATED)
         return response.Response({'error':form.errors},status=status.HTTP_400_BAD_REQUEST)
 
-
 class UserActivityViewSet(ModelViewSet):
     serializer_class = UserActivitySerializer
     permission_classes = [permissions.AllowAny]
-    queryset = UserActivity.objects.all()
+    queryset = UserActivity.objects.select_related('user','activity').prefetch_related('user__groups')
 
 
 class ReportMrpViewSet(ModelViewSet):
+    '''
+    plant manager -> material requirement planning report
+    '''
     serializer_class = ReportMrpSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = MaterialRequirementPlanning.objects.all()
+    queryset = MaterialRequirementPlanning.objects.select_related('material').prefetch_related(
+        Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product')))
 
-class ReportSalesOrderViewSet(ModelViewSet):
-    serializer_class = ReportSalesOrderSerializer
+    
+class ReportSupplierPurchaseOrderViewSet(ModelViewSet):
+    '''
+    plant manager -> schedule material receipt report
+    '''
+    serializer_class = SupplierSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = SalesOrder.objects.all()
+    queryset = Supplier.objects.prefetch_related(
+        Prefetch('purchasing_purchaseordermaterial_related',queryset=PurchaseOrderMaterial.objects.prefetch_related(
+            Prefetch('materialorder_set',queryset=MaterialOrder.objects.prefetch_related('materialreceiptschedule_set').select_related('material__uom')))))
+    
+class ReportCustomerSalesOrderViewSet(ReadOnlyModelViewSet):
+    '''
+    plant manager -> sales report -> sales order
+    '''
+    
+    serializer_class = CustomerSalesOrderSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Customer.objects.prefetch_related(
+        Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related(
+            Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related(
+                Prefetch('product',queryset=Product.objects.prefetch_related(
+                        Prefetch('ppic_process_related',queryset=Process.objects.prefetch_related(Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type'))))).prefetch_related(Prefetch('ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type')))))))))
 
 
+class ReportDeliveryNoteCustomerViewSet(ReadOnlyModelViewSet):
+    '''
+    plant manager -> sales report -> delivery note
+    '''
+    serializer_class = CustomerDeliveryNoteSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Customer.objects.prefetch_related(
+        Prefetch('ppic_deliverynotecustomer_related',queryset=DeliveryNoteCustomer.objects.prefetch_related(
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.prefetch_related(
+                Prefetch('product_order',queryset=ProductOrder.objects.select_related('product','sales_order'))))).select_related('driver','vehicle')))
+
+    
 

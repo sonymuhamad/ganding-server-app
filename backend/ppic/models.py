@@ -125,7 +125,7 @@ class WarehouseProduct(AbstractWarehouse,AbstractProduct):
     process = models.ForeignKey(Process,on_delete=models.CASCADE)
     
     class Meta(AbstractWarehouse.Meta,AbstractProduct.Meta):
-        unique_together = [['warehouse_type','product']]
+        unique_together = [['warehouse_type','process']]
 
 class AbstractRequirement(models.Model):
     process = models.ForeignKey(Process,on_delete=models.CASCADE)

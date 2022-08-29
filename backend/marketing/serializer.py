@@ -37,6 +37,17 @@ class ProductOrderManagementSerializer(ModelSerializer):
     post , put
     '''
     deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
+
+    def validate(self, attrs):
+        '''
+        validasi jika SALES ORDER udah done, maka invalid
+        quantity pada SCHEDULE_SET berlebih, maka invalid
+        kalo PRODUCT ORDER NYA done, maka invalid
+        kalo quantity PRODUCT ORDERED lebih daripada DELIVERED, maka invalid
+        INSYA ALLAH BESOK DIBUATNYA
+        '''
+        return super().validate(attrs)
+
     def create(self, validated_data):
         
         schedule = validated_data.pop('deliveryschedule_set')
@@ -120,7 +131,7 @@ class SalesOrderManagementSerializer(ModelSerializer):
 
         product_order_object = instance.productorder_set.all()
 
-        
+        i = 0
         for i in range(len_new_product_order):
             new_schedules = new_product_order[i].pop('deliveryschedule_set')
             len_new_schedules = len(new_schedules) 
@@ -135,7 +146,7 @@ class SalesOrderManagementSerializer(ModelSerializer):
                 
                 old_schedule = instance_product_order.deliveryschedule_set.all()
                 len_old_schedule = len(old_schedule) - 1
-
+            j = 0
             for j in range(len_new_schedules):
                 
                 if i > len_old_product:

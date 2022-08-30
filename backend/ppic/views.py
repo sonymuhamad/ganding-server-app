@@ -49,16 +49,19 @@ class ProductCustomerReadOnlyViewSet(ReadOnlyModelViewSet):
             prefetch_related(
                 Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
             prefetch_related(
-                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))))).select_related('type')))
-
-    @queryDebug
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
+                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type'))).select_related('type')))
 
 class ProductManagementViewSet(ModelViewSet):
     serializer_class = ProductManagementSerializer
     permission_classes = [AllowAny]
-    queryset = Product.objects.all()
+    queryset = Product.objects.prefetch_related(
+            Prefetch('ppic_process_related',queryset=Process.objects.
+            prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type'))).
+            prefetch_related(
+                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
+            prefetch_related(
+                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type'))).select_related('type')
 
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']

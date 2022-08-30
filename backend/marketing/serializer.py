@@ -38,27 +38,90 @@ class ProductOrderManagementSerializer(ModelSerializer):
     '''
     deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
 
+    def validate_deliveryschedule_set(self,attrs):
+        delivered = self.initial_data.get('delivered',0)
+        available_schedule = self.initial_data['ordered'] - delivered
+        temp = 0
+        
+        for schedule in attrs:
+            temp += schedule['quantity']
+        
+        if temp > available_schedule:
+            raise ValidationError('Jumlah pengiriman product pada jadwal melebihi pesanan')
+        
+        return attrs
+
+    def validate_sales_order(self,attrs):
+        if attrs.fixed or attrs.done:
+            raise ValidationError('Sales order tersebut sudah fixed atau sudah selesai')
+        return attrs
+    
+    def validate_done(self,attrs):
+        if attrs:
+            raise ValidationError('Product order tersebut sudah selesai')
+        return attrs
+
     def validate(self, attrs):
         '''
-        validasi jika SALES ORDER udah done, maka invalid
-        quantity pada SCHEDULE_SET berlebih, maka invalid
-        kalo PRODUCT ORDER NYA done, maka invalid
         kalo quantity PRODUCT ORDERED lebih daripada DELIVERED, maka invalid
-        INSYA ALLAH BESOK DIBUATNYA
         '''
+        delivered = attrs.get('delivered',0)
+        if delivered > attrs['ordered']:
+            raise ValidationError('Jumlah product terkirim lebih dari jumlah product pesanan')
+
         return super().validate(attrs)
 
     def create(self, validated_data):
         
-        schedule = validated_data.pop('deliveryschedule_set')
-        product_order = ProductOrder.objects.create(**validated_data)
-        DeliverySchedule.objects.bulk_create(schedule)
+        schedules = validated_data.pop('deliveryschedule_set')
+        inserted_schedule = []
 
-        return product_order 
+        product_order = ProductOrder.objects.create(**validated_data)
+        for schedule in schedules:
+            inserted_schedule.append(DeliverySchedule(**schedule,product_order=product_order))
+
+        DeliverySchedule.objects.bulk_create(inserted_schedule)
+
+        return product_order
+
+    def update(self, instance, validated_data):
+        inserted_schedule = []
+        updated_schedule = []
+        deleted_schedule = []
+
+        schedules = validated_data.pop('deliveryschedule_set')
+        len_schedules = len(schedules)
+
+        instance_schedules = instance.deliveryschedule_set.all()
+        len_instance_schedules = len(instance_schedules)
+        instance.ordered = validated_data['ordered']
+        instance.delivered = validated_data.get('delivered',instance.delivered)
+        instance.product = validated_data['product']
+        instance.save()
+
+        l = 0
+        for i in range(len_schedules):
+            if i > len_instance_schedules - 1:
+                inserted_schedule.append(DeliverySchedule(**schedules[i],product_order=instance))
+            else:
+                instance_schedule = instance_schedules[i]
+                instance_schedule.quantity = schedules[i]['quantity']
+                instance_schedule.date = schedules[i]['date']
+                updated_schedule.append(instance_schedule)
+        
+        deleted_schedule = deleted_schedule[:] + instance_schedules[l+i+1:]
+
+        DeliverySchedule.objects.bulk_create(inserted_schedule)
+        DeliverySchedule.objects.bulk_update(updated_schedule,['quantity','date'])
+
+        for schedule in deleted_schedule:
+            schedule.delete()
+        
+        return instance 
         
     class Meta:
         model = ProductOrder
-        fields = ['id','ordered','product','deliveryschedule_set']
+        fields = ['id','ordered','product','delivered','deliveryschedule_set','sales_order','done']
 
 class SalesOrderManagementSerializer(ModelSerializer):
     '''
@@ -150,7 +213,7 @@ class SalesOrderManagementSerializer(ModelSerializer):
             for j in range(len_new_schedules):
                 
                 if i > len_old_product:
-                    insert_new_schedule.append(DeliverySchedule(**new_schedules[j],instance_product_order=instance_product_order))     
+                    insert_new_schedule.append(DeliverySchedule(**new_schedules[j],product_order=instance_product_order))     
 
                 else:
                     if j > len_old_schedule:
@@ -193,7 +256,7 @@ class ProductOrderReadOnlySerializer(ModelSerializer):
         
     class Meta:
         model = ProductOrder
-        fields = ['id','ordered','product','deliveryschedule_set']
+        fields = ['id','ordered','delivered','product','deliveryschedule_set']
         depth = 1
 
 class SalesOrderReadOnlySerializer(ModelSerializer):

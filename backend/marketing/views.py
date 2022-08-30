@@ -1,5 +1,5 @@
 from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
-from .serializer import CustomerSerializer,SalesOrderManagementSerializer, SalesOrderReadOnlySerializer,DeliveryCustomerSerializer,DeliveryProductCustomerManagementSerializer,CustomerSalesOrderReadOnlySerializer
+from .serializer import CustomerSerializer,SalesOrderManagementSerializer, SalesOrderReadOnlySerializer,DeliveryCustomerSerializer,DeliveryProductCustomerManagementSerializer,CustomerSalesOrderReadOnlySerializer,ProductOrderManagementSerializer
 from rest_framework import response,status,permissions
 from rest_framework.serializers import ValidationError
 from django.shortcuts import get_object_or_404
@@ -101,6 +101,20 @@ class SalesOrderManagementViewSet(ModelViewSet):
 
         queryset_productorder = instance_so.productorder_set.all()
         validate_productorder(queryset_productorder)
+
+        return super().destroy(request, *args, **kwargs)
+
+class ProductOrderManagementViewSet(ModelViewSet):
+    serializer_class = ProductOrderManagementSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = ProductOrder.objects.prefetch_related('deliveryschedule_set')
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_po = get_object_or_404(self.queryset,pk=pk)
+
+        if instance_po.delivered > 0:
+            invalid()
 
         return super().destroy(request, *args, **kwargs)
 

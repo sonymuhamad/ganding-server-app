@@ -1,5 +1,6 @@
 from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
 from rest_framework.permissions import AllowAny
+from rest_framework.serializers import ValidationError
 
 import functools
 import time
@@ -9,8 +10,10 @@ from django.shortcuts import get_object_or_404
 
 
 from manager.shortcuts import invalid
-from ppic.models import Process, Product, RequirementMaterial, RequirementProduct, WarehouseProduct
-from .serializer import ProductCustomerReadOnlySerializer,ProductManagementSerializer
+from ppic.models import DetailMrp, Material, MaterialRequirementPlanning, Process, Product, RequirementMaterial, RequirementProduct, WarehouseProduct
+from purchasing.models import Supplier
+from .serializer import ProductCustomerReadOnlySerializer,ProductManagementSerializer,MaterialSupplierReadOnlySerializer,MaterialSerializer,MrpReadOnlySerializer,MrpManagementSerializer
+
 from marketing.models import Customer
 
 
@@ -84,7 +87,43 @@ class ProductManagementViewSet(ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+class MaterialSupplierReadOnlyViewSet(ReadOnlyModelViewSet):
+    serializer_class = MaterialSupplierReadOnlySerializer
+    permission_classes = [AllowAny]
+    queryset = Supplier.objects.prefetch_related(Prefetch('ppic_material_related',queryset=Material.objects.prefetch_related(Prefetch('ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process__product'))).select_related('warehousematerial') ))
 
 
+class MaterialSerializer(ModelViewSet):
+    serializer_class = MaterialSerializer
+    permission_classes = [AllowAny]
+    queryset = Material.objects.prefetch_related('ppic_requirementmaterial_related').select_related('warehousematerial')
 
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instances = self.queryset
+        instance = get_object_or_404(instances,pk=pk)
+
+        req_material = instance.ppic_requirementmaterial_related.all()
+        wh_material = instance.ppic_warehousematerial_related.first()
+
+        if len(req_material) > 0:
+            raise ValidationError('Tidak bisa menghapus data material yang menjadi kebutuhan produksi')
+        if wh_material.quantity > 0:
+            raise ValidationError('Tidak bisa menghapus data material yang memiliki stok di gudang')
+        return super().destroy(request, *args, **kwargs)
+
+
+class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
+    serializer_class = MrpReadOnlySerializer
+    permission_classes = [AllowAny]
+    queryset = MaterialRequirementPlanning.objects.prefetch_related(Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product'))).select_related('material__supplier','material__uom')
+
+    @queryDebug
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+class MrpManagementViewSet(ModelViewSet):
+    serializer_class = MrpManagementSerializer
+    permission_classes = [AllowAny]
+    queryset = MaterialRequirementPlanning.objects.all()
 

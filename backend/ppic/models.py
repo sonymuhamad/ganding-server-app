@@ -31,9 +31,8 @@ class ProcessType(AbstractType):
     pass
 
 
-class AbstractWarehouse(AbstractQuantity):
-    warehouse_type = models.ForeignKey(WarehouseType,on_delete=models.CASCADE)
-
+class AbstractWarehouse(models.Model):
+    quantity = models.PositiveBigIntegerField(default=0)
     class Meta:
         abstract = True
 
@@ -101,12 +100,11 @@ class AbstractMaterial(models.Model):
         abstract = True
 
 
-class WarehouseMaterial(AbstractWarehouse,AbstractMaterial):
+class WarehouseMaterial(AbstractWarehouse):
     '''
     every material stock are store in this table
     '''
-    class Meta(AbstractWarehouse.Meta,AbstractMaterial.Meta):
-        unique_together = [['warehouse_type','material']]
+    material = models.OneToOneField(Material,on_delete=models.CASCADE)
 
 
 class Process(AbstractProduct):
@@ -123,7 +121,7 @@ class WarehouseProduct(AbstractWarehouse,AbstractProduct):
     '''
     '''
     process = models.ForeignKey(Process,on_delete=models.CASCADE)
-    
+    warehouse_type = models.ForeignKey(WarehouseType,on_delete=models.CASCADE)
     class Meta(AbstractWarehouse.Meta,AbstractProduct.Meta):
         unique_together = [['warehouse_type','process']]
 

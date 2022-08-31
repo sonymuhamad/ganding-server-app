@@ -75,8 +75,17 @@ class ProductOrderManagementSerializer(ModelSerializer):
         
         schedules = validated_data.pop('deliveryschedule_set')
         inserted_schedule = []
+        product = validated_data['product']
+        sales_order = validated_data['sales_order']
+        
+        product_order = ProductOrder.objects.filter(product=product,sales_order=sales_order).first()
+        
+        if product_order == None:
+            product_order = ProductOrder.objects.create(**validated_data)
+        else:
+            product_order.ordered += validated_data['ordered']
+            product_order.save()
 
-        product_order = ProductOrder.objects.create(**validated_data)
         for schedule in schedules:
             inserted_schedule.append(DeliverySchedule(**schedule,product_order=product_order))
 
@@ -96,7 +105,6 @@ class ProductOrderManagementSerializer(ModelSerializer):
         len_instance_schedules = len(instance_schedules)
         instance.ordered = validated_data['ordered']
         instance.delivered = validated_data.get('delivered',instance.delivered)
-        instance.product = validated_data['product']
         instance.save()
 
         l = 0
@@ -123,11 +131,19 @@ class ProductOrderManagementSerializer(ModelSerializer):
         model = ProductOrder
         fields = ['id','ordered','product','delivered','deliveryschedule_set','sales_order','done']
 
+
+
+class ProductOrderManagementUnitedSerializer(ModelSerializer):
+    deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
+    class Meta:
+        model = ProductOrder
+        fields = ['id','ordered','product','delivered','deliveryschedule_set','done']
+
 class SalesOrderManagementSerializer(ModelSerializer):
     '''
     post , put
     '''
-    productorder_set = ProductOrderManagementSerializer(many=True)
+    productorder_set = ProductOrderManagementUnitedSerializer(many=True)
 
     def validate(self, attrs):
 
@@ -155,14 +171,22 @@ class SalesOrderManagementSerializer(ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        print(validated_data)
         delivery_schedule_objects = [] 
         temp_product_orders = validated_data.pop('productorder_set')
         new_sales_order = SalesOrder.objects.create(**validated_data)
         
         for product_order in temp_product_orders:
             schedules = product_order.pop('deliveryschedule_set')
-            new_product_order = ProductOrder.objects.create(sales_order=new_sales_order,**product_order)
+
+            product = product_order['product']
+
+            new_product_order = ProductOrder.objects.filter(product=product,sales_order=new_sales_order).first()
+        
+            if new_product_order == None:
+                new_product_order = ProductOrder.objects.create(sales_order=new_sales_order,**product_order)
+            else:
+                new_product_order.ordered += product_order['ordered']
+                new_product_order.save()
             
             for schedule in schedules:
                 delivery_schedule_objects.append(DeliverySchedule(**schedule,product_order=new_product_order))     
@@ -176,6 +200,9 @@ class SalesOrderManagementSerializer(ModelSerializer):
         return 
 
     def update(self, instance, validated_data):
+        fixed = instance.fixed
+        if fixed:
+            raise ValidationError('Sales order tersebut sudah fix, perubahan data tidak diizinkan')
 
         old_product_order = instance.productorder_set.all()
         len_old_product = len(old_product_order) - 1 
@@ -204,7 +231,6 @@ class SalesOrderManagementSerializer(ModelSerializer):
             else:
                 instance_product_order = product_order_object[i]
                 instance_product_order.ordered = new_product_order[i]['ordered']
-                instance_product_order.product = new_product_order[i]['product']
                 updated_product_order.append(instance_product_order)
                 
                 old_schedule = instance_product_order.deliveryschedule_set.all()
@@ -227,7 +253,7 @@ class SalesOrderManagementSerializer(ModelSerializer):
             deleted_schedule = deleted_schedule[:] + old_schedule[j+1:]         
         deleted_product_order = deleted_product_order[:] + old_product_order[i+1:]
 
-        ProductOrder.objects.bulk_update(updated_product_order,['ordered','product'])
+        ProductOrder.objects.bulk_update(updated_product_order,['ordered'])
         DeliverySchedule.objects.bulk_update(updated_schedule,['quantity','date'])
         DeliverySchedule.objects.bulk_create(insert_new_schedule)
 

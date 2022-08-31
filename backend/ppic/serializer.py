@@ -1,5 +1,7 @@
 from rest_framework.serializers import ModelSerializer,StringRelatedField,ValidationError
 
+from purchasing.models import Supplier
+
 # from .models import DeliveryNoteCustomer, DeliveryNoteSubcont, DeliverySchedule, DetailMrp, Driver, Material, MaterialOrder, MaterialReceipt, MaterialRequirementPlanning, Process, Product, ProductDeliverCustomer, ProductDeliverSubcont, ProductOrder, RequirementMaterial, RequirementProduct, Vehicle, WarehouseMaterial, WarehouseProduct,MaterialReceiptSchedule,DeliveryNoteMaterial
 
 from .models import *
@@ -407,8 +409,36 @@ class ProductManagementSerializer(ModelSerializer):
 ### Product management seriz
 ######
 
+#########
+##### material read only seriz
 
+class RequirementReadOnlySerializer(RequirementMaterialReadOnlySerializer):
 
+    class Meta(RequirementMaterialReadOnlySerializer.Meta):
+        fields = ['id','conversion','process']
+        depth = 2
+
+class WarehouseMaterialReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = WarehouseMaterial
+        fields = ['id','quantity']
+
+class MaterialReadOnlySerializer(ModelSerializer):
+    ppic_requirementmaterial_related = RequirementReadOnlySerializer(many=True)
+    warehousematerial = WarehouseMaterialReadOnlySerializer()
+    class Meta:
+        model = Material
+        exclude = ['supplier']
+        depth = 1
+
+class MaterialSupplierReadOnlySerializer(ModelSerializer):
+    ppic_material_related = MaterialReadOnlySerializer(many=True)
+    class Meta:
+        model = Supplier
+        fields = '__all__'
+
+#### material read only seriz
+#########
 
 
 
@@ -472,21 +502,95 @@ class ProductionReportSerializer(ModelSerializer):
 
 class MaterialSerializer(ModelSerializer):
 
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        WarehouseMaterial.objects.create(quantity=0,material=instance)
+        return instance 
+    
+    def update(self, instance, validated_data):
+        req_material = instance.ppic_requirementmaterial_related.all()
+        wh_material = instance.warehousematerial
+
+        if len(req_material) > 0:
+            raise ValidationError('Tidak bisa mengubah data material yang menjadi kebutuhan produksi')
+        if wh_material.quantity > 0:
+            raise ValidationError('Tidak bisa mengubah data material yang memiliki stok di gudang')
+        
+        return super().update(instance, validated_data)
+    
     class Meta:
         model = Material
-        fields = ['name','spec','length','width','thickness','uom','supplier','weight','image']
+        fields = ['id','name','spec','length','width','thickness','uom','supplier','weight','image']
 
-class MrpSerializer(ModelSerializer):
 
-    class Meta:
-        model = MaterialRequirementPlanning
-        fields = ['material','quantity']
-
-class DetailMrpSerializer(ModelSerializer):
+class DetailMrpReadOnlySerializer(ModelSerializer):
 
     class Meta:
         model = DetailMrp
-        fields = ['product','mrp','quantity_production']
+        fields = ['id','product','quantity','quantity_production']
+        depth = 1
+
+class MrpReadOnlySerializer(ModelSerializer):
+    detailmrp_set = DetailMrpReadOnlySerializer(many=True)
+
+    class Meta:
+        model = MaterialRequirementPlanning
+        fields = ['id','material','quantity','detailmrp_set']
+        depth = 2
+
+class DetailMrpManagementSerializer(ModelSerializer):
+    class Meta:
+        model = DetailMrp
+        fields = ['id','product','quantity','quantity_production']
+
+class MrpManagementSerializer(ModelSerializer):
+    detailmrp_set = DetailMrpManagementSerializer(many=True)
+
+    def validate_detailmrp_set(self,attrs):
+        quantity_req = self.initial_data['quantity']
+        temp = 0
+        for detailmrp in attrs:
+            temp += detailmrp['quantity']
+        if temp > quantity_req:
+            raise ValidationError('Jumlah kebutuhan berlebih dari jumlah permintaan')
+
+        return attrs
+    
+    def update(self, instance, validated_data):
+        detailmrps = validated_data.pop('detailmrp_set')
+        len_detailmrps = len(detailmrps)
+
+        instance_detailmrps = instance.detailmrp_set.all()
+        len_instance_mrps = len(instance_detailmrps)
+
+        instance.quantity = validated_data['quantity']
+        instance.material = validated_data['material']
+        instance.save()
+
+        for i in range(len_detailmrps):
+            if i > len_instance_mrps - 1:
+                DetailMrp.objects.create(**detailmrps[i],mrp=instance)
+            else:
+                instance_detailmrps[i].quantity = detailmrps[i]['quantity']
+                instance_detailmrps[i].quantity_production = detailmrps[i]['quantity_production']
+                instance_detailmrps[i].product = detailmrps[i]['product']
+                instance_detailmrps[i].save()
+
+        return instance
+
+    def create(self, validated_data):
+        detailmrps = validated_data.pop('detailmrp_set')
+        instance = super().create(validated_data)
+        
+        for detailmrp in detailmrps:
+            DetailMrp.objects.create(**detailmrp,mrp=instance)
+
+        return instance
+
+    class Meta:
+        model = MaterialRequirementPlanning
+        fields = ['id','quantity','material','detailmrp_set']
+
 
 class WarehouseMaterialSerializer(ModelSerializer):
     class Meta:

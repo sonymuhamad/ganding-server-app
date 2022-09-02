@@ -1,4 +1,3 @@
-from enum import unique
 from django.db import models
 from marketing.models import AbstractCustomer,SalesOrder
 from purchasing.models import AbstractSupplier,PurchaseOrderMaterial
@@ -24,12 +23,13 @@ class ProductType(AbstractType):
 class UnitOfMaterial(AbstractType):
     pass
 
+
+
 class WarehouseType(AbstractType):
     pass
 
 class ProcessType(AbstractType):
     pass
-
 
 class AbstractWarehouse(models.Model):
     quantity = models.PositiveBigIntegerField(default=0)
@@ -40,7 +40,7 @@ class AbstractWarehouse(models.Model):
 
 class AbstractStuff(models.Model):
     name = models.CharField(max_length=255)
-    weight = models.FloatField()
+    weight = models.FloatField(blank=True)
     image = models.ImageField(upload_to="images/",blank=True)
 
     def __str__(self) -> str:
@@ -85,9 +85,9 @@ class Material(AbstractStuff,AbstractSupplier):
     '''
     '''
     spec = models.CharField(max_length=150)
-    length = models.FloatField()
-    width = models.FloatField()
-    thickness = models.FloatField()
+    length = models.FloatField(blank=True)
+    width = models.FloatField(blank=True)
+    thickness = models.FloatField(blank=True)
     uom = models.ForeignKey(UnitOfMaterial,on_delete=models.CASCADE)
     
     class Meta(AbstractStuff.Meta,AbstractSupplier.Meta):
@@ -99,6 +99,27 @@ class AbstractMaterial(models.Model):
     class Meta:
         abstract = True
 
+class ConversionUom(models.Model):
+    uom_input = models.ForeignKey(UnitOfMaterial,on_delete=models.CASCADE,related_name='uom_inputs')
+    uom_output = models.ForeignKey(UnitOfMaterial,on_delete=models.CASCADE,related_name='uom_outputs')
+    
+    class Meta:
+        unique_together = [['uom_input','uom_output']]
+
+class BasedConversionMaterial(models.Model):
+    quantity_input = models.PositiveIntegerField()
+    material_input = models.ForeignKey(Material,on_delete=models.CASCADE,related_name='based_material_inputs')
+    quantity_output = models.PositiveIntegerField()
+    material_output = models.ForeignKey(Material,on_delete=models.CASCADE,related_name='based_material_outputs')
+    
+    class Meta:
+        unique_together = [['material_input','material_output']]
+
+class ConversionMaterialReport(models.Model):
+    quantity_input = models.PositiveIntegerField()
+    material_input = models.ForeignKey(Material,on_delete=models.CASCADE,related_name='report_material_inputs')
+    quantity_output = models.PositiveIntegerField()
+    material_output = models.ForeignKey(Material,on_delete=models.CASCADE,related_name='report_material_outputs')
 
 class WarehouseMaterial(AbstractWarehouse):
     '''
@@ -106,6 +127,12 @@ class WarehouseMaterial(AbstractWarehouse):
     '''
     material = models.OneToOneField(Material,on_delete=models.CASCADE)
 
+class WarehouseScrapMaterial(models.Model):
+    '''
+    leftover material of the productions
+    '''
+    material = models.OneToOneField(Material,on_delete=models.CASCADE)
+    quantity = models.FloatField()
 
 class Process(AbstractProduct):
     '''
@@ -127,18 +154,16 @@ class WarehouseProduct(AbstractWarehouse,AbstractProduct):
 
 class AbstractRequirement(models.Model):
     process = models.ForeignKey(Process,on_delete=models.CASCADE)
-    conversion = models.FloatField() #calculations of conversion depends on process type
-    
+    input = models.PositiveBigIntegerField(default=1)
+    output = models.PositiveBigIntegerField(default=1)
     class Meta:
         abstract = True
 
 class RequirementProduct(AbstractRequirement,AbstractProduct):
-    
     class Meta(AbstractRequirement.Meta,AbstractProduct.Meta):
         pass
 
 class RequirementMaterial(AbstractRequirement,AbstractMaterial):
-    
     class Meta(AbstractRequirement.Meta,AbstractMaterial.Meta):
         pass
 

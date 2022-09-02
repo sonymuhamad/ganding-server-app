@@ -1,9 +1,8 @@
 from rest_framework.serializers import ModelSerializer,StringRelatedField,ValidationError
 
 from purchasing.models import Supplier
-
-# from .models import DeliveryNoteCustomer, DeliveryNoteSubcont, DeliverySchedule, DetailMrp, Driver, Material, MaterialOrder, MaterialReceipt, MaterialRequirementPlanning, Process, Product, ProductDeliverCustomer, ProductDeliverSubcont, ProductOrder, RequirementMaterial, RequirementProduct, Vehicle, WarehouseMaterial, WarehouseProduct,MaterialReceiptSchedule,DeliveryNoteMaterial
-
+from django.db.models import Q
+from math import ceil
 from .models import *
 from marketing.models import Customer
 from manager.shortcuts import invalid
@@ -87,8 +86,28 @@ class RequirementProductManagementSerializer(ModelSerializer):
         model = RequirementProduct
         exclude = ['process']
 
-class ProcessManagementSerializer(ModelSerializer):
+class RequirementProductManagement(ModelSerializer):
     
+    def validate(self, attrs):
+        product_in_process = attrs['process'].product
+
+        product_needed = attrs['product']
+        for process_of_product_needed in product_needed.ppic_process_related.all():
+            if process_of_product_needed.requirementproduct_set.all().contains(product_in_process):
+                raise ValidationError(f'{product_needed.name} tidak bisa menjadi kebutuhan pada semua proses {product_in_process.name}')
+
+        return super().validate(attrs)
+
+    class Meta:
+        model = RequirementProduct
+        fields = '__all__'
+
+class RequirementMaterialManagement(ModelSerializer):
+    class Meta:
+        model = RequirementMaterial
+        fields = '__all__'
+
+class ProcessManagementSerializer(ModelSerializer):
     requirementproduct_set = RequirementProductManagementSerializer(many=True)
     requirementmaterial_set = RequirementMaterialManagementSerializer(many=True)
     class Meta:
@@ -123,12 +142,12 @@ class ProductManagementSerializer(ModelSerializer):
     def changed_material(self,obj:dict) -> None:
         self.perform_delete(obj['deleted'])
         self.perform_insert(obj['inserted'],obj['instance'])
-        self.perform_update(obj['updated'],obj['instance'],['conversion','material','process'])
+        self.perform_update(obj['updated'],obj['instance'],['input','output','material','process'])
         
     def changed_product(self,obj:dict) -> None:
         self.perform_delete(obj['deleted'])
         self.perform_insert(obj['inserted'],obj['instance'])
-        self.perform_update(obj['updated'],obj['instance'],['conversion','product','process'])
+        self.perform_update(obj['updated'],obj['instance'],['input','output','product','process'])
     
     def changed_warehouseproduct(self,obj:dict) -> None:
         self.perform_delete(obj['deleted'])
@@ -230,17 +249,18 @@ class ProductManagementSerializer(ModelSerializer):
                 new_process_type = many_process[i]['process_type'].id
 
             instance_req_material = instance_process.requirementmaterial_set.all()
-            len_instance_req_material = len(instance_req_material)
+            len_instance_req_material = len(instance_req_material) - 1
 
             instance_req_product = instance_process.requirementproduct_set.all()
-            len_instance_req_product = len(instance_req_product)
+            len_instance_req_product = len(instance_req_product) - 1
             
             k = 0
             for k in range(len_material):
                 if k > len_instance_req_material:
                     changed_data['material']['inserted'].append(RequirementMaterial(**req_material[k],process=instance_process))
                 else:
-                    instance_req_material[k].conversion = req_material[k]['conversion']
+                    instance_req_material[k].input = req_material[k].get('input',instance_req_material[k].input)
+                    instance_req_material[k].output = req_material[k].get('output',instance_req_material[k].output)
                     instance_req_material[k].material = req_material[k]['material']
                     instance_req_material[k].process = instance_process                    
                     changed_data['material']['updated'].append(instance_req_material[k])
@@ -252,7 +272,8 @@ class ProductManagementSerializer(ModelSerializer):
                 if j > len_instance_req_product:
                     changed_data['product']['inserted'].append(RequirementProduct(**req_product[j],process=instance_process))
                 else:
-                    instance_req_product[j].conversion = req_product[j]['conversion']
+                    instance_req_product[j].input = req_product[j].get('input',instance_req_product[j].input)
+                    instance_req_product[j].output = req_product[j].get('output',instance_req_product[j].output)
                     instance_req_product[j].product = req_product[j]['product']
                     instance_req_product[j].process = instance_process                    
                     changed_data['product']['updated'].append(instance_req_product[j])
@@ -328,6 +349,7 @@ class ProductManagementSerializer(ModelSerializer):
                         changed_data['warehouseproduct']['updated'].append(fg)
 
                     else: #proses lama juga BUKAN yang TERAKHIR
+                        
                         wip = instance_process.warehouseproduct_set.get(warehouse_type=order+2)
 
                         if old_process_type == 2 and new_process_type != 2: # kalo proses lamanya itu subcont
@@ -415,7 +437,7 @@ class ProductManagementSerializer(ModelSerializer):
 class RequirementReadOnlySerializer(RequirementMaterialReadOnlySerializer):
 
     class Meta(RequirementMaterialReadOnlySerializer.Meta):
-        fields = ['id','conversion','process']
+        fields = ['id','input','process','output']
         depth = 2
 
 class WarehouseMaterialReadOnlySerializer(ModelSerializer):
@@ -444,55 +466,8 @@ class MaterialSupplierReadOnlySerializer(ModelSerializer):
 
 ###### Serializers for product
 
-class ProductOrderSerializer(ModelSerializer):
-    class Meta:
-        model = ProductOrder
-        fields = ['sales_order','product','ordered','delivered']
 
-class WarehouseSerializer(ModelSerializer):
-    class Meta:
-        model = WarehouseProduct
-        fields = ['warehouse_type','product','quantity']
 
-class DeliveryScheduleSerializer(ModelSerializer):
-    class Meta:
-        model = DeliverySchedule
-        fields = ['product_order','date','quantity']
-
-class RequirementProductSerializer(ModelSerializer):
-    class Meta:
-        model = RequirementProduct
-        fields = ['process','product','conversion']
-
-class ProcessSerializer(ModelSerializer):
-    class Meta:
-        model = Process
-        fields = ['process_type','process_name','order','product']
-
-class DeliveryNoteSubcontSerializer(ModelSerializer):
-    class Meta:
-        model = DeliveryNoteSubcont
-        fields = ['driver','vehicle','code','created','note','supplier']
-
-class ProductDeliverSubcontSerializer(ModelSerializer):
-    class Meta:
-        model = ProductDeliverSubcont
-        fields = ['product','quantity','deliver_note_subcont']
-
-class DeliveryNoteCustomerSerializer(ModelSerializer):
-    class Meta:
-        model = DeliveryNoteCustomer
-        fields = ['driver','vehicle','code','created','note','customer']
-
-class ProductDeliverCustomerSerializer(ModelSerializer):
-    class Meta:
-        model = ProductDeliverCustomer
-        fields = ['product_order','quantity','delivery_note_customer','paid']
-
-class ProductionReportSerializer(ModelSerializer):
-    class Meta:
-        model = ProductionReport
-        fields = ['product','created','quantity','process','quantity_not_good','operator','machine']
 
 
 
@@ -522,6 +497,117 @@ class MaterialSerializer(ModelSerializer):
         model = Material
         fields = ['id','name','spec','length','width','thickness','uom','supplier','weight','image']
 
+class ConversionUomReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = ConversionUom
+        fields = '__all__'
+        depth = 1
+
+class ConversionUomManagementSerializer(ModelSerializer):
+
+    def validate(self, attrs):
+        input = attrs['uom_input']
+        output = attrs['uom_output']
+
+        if input == output:
+            raise ValidationError('Tidak bisa memasukkan data konversi dari unit yang sama')
+
+        uoms = ConversionUom.objects.filter(Q(uom_input = output) & Q(uom_output = input)).first()
+        
+        if uoms is None:
+            return super().validate(attrs)
+        raise ValidationError(f'{input.name} sudah menjadi dasar konversi dari {output.name}')
+
+    class Meta:
+        model = ConversionUom
+        fields = '__all__'
+
+class BasedConversionReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = BasedConversionMaterial
+        fields = '__all__'
+        depth = 2
+
+class BasedConversionManagementSerializer(ModelSerializer):
+
+    def validate(self, attrs):
+        input = attrs['material_input']
+        unit_input  = input.uom
+        output = attrs['material_output']
+        unit_output = output.uom
+        
+
+        uoms = ConversionUom.objects.filter(Q(uom_input = unit_input) & Q(uom_output = unit_output)).first()
+
+        if uoms is None:
+            raise ValidationError('Tidak ada data konversi unit pada material tersebut')
+        if input == output:
+            raise ValidationError('Tidak bisa mengkonversi material yang sama')
+
+        return super().validate(attrs)
+
+    class Meta:
+        model = BasedConversionMaterial
+        fields = '__all__'
+
+class ConversionMaterialReportReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = ConversionMaterialReport
+        fields = '__all__'
+        depth = 2
+
+class ConversionMaterialReportManagementSerializer(ModelSerializer):
+    
+    def validate(self, attrs):
+        '''
+        validasi untuk kecukupan material
+        '''
+        input = attrs['material_input']
+        output = attrs['material_output']
+        uoms = BasedConversionMaterial.objects.filter(Q(material_input = input) & Q(material_output = output)).first()
+        if uoms is None:
+            raise ValidationError('Tidak ada data konversi pada kedua material tersebut')
+        
+        used_material = (attrs['quantity_output'] / uoms.quantity_output) * uoms.quantity_input
+        stok = input.warehousematerial.quantity
+        if used_material > stok:
+            raise ValidationError(f'Stok material {input.name} tidak cukup')
+        
+        return super().validate(attrs)
+    
+    def create(self, validated_data):
+        input = validated_data['material_input']
+        output = validated_data['material_output']
+
+        uoms = BasedConversionMaterial.objects.get(material_input = input, material_output=output)
+        used_material = (validated_data['quantity_output'] / uoms.quantity_output) * uoms.quantity_input
+        
+        rest_material = ceil(used_material) - used_material
+
+        if rest_material > 0:
+            wh_scrap = WarehouseScrapMaterial.objects.filter(material=input).first()
+            if wh_scrap is None:
+                WarehouseScrapMaterial.objects.create(quantity = rest_material, material = input)
+            else:
+                wh_scrap.quantity += rest_material
+                wh_scrap.save()
+        
+        wh_material_input = input.warehousematerial
+        wh_material_input.quantity -= ceil(used_material)
+        wh_material_input.save()
+
+        wh_material_output = output.warehousematerial
+        wh_material_output.quantity += validated_data['quantity_output']
+        wh_material_output.save()
+
+        validated_data['quantity_input'] = ceil(used_material)
+
+        return super().create(validated_data)
+
+    class Meta:
+        model = ConversionMaterialReport
+        fields = '__all__'
+        read_only_fields = ['quantity_input']
 
 class DetailMrpReadOnlySerializer(ModelSerializer):
 
@@ -591,48 +677,67 @@ class MrpManagementSerializer(ModelSerializer):
         model = MaterialRequirementPlanning
         fields = ['id','quantity','material','detailmrp_set']
 
-
-class WarehouseMaterialSerializer(ModelSerializer):
+class WarehouseMaterialManagementSerializer(ModelSerializer):
     class Meta:
         model = WarehouseMaterial
-        fields = ['warehouse_type','material','quantity']
+        fields = '__all__'
+        read_only_fields = ['id','material']
 
-class RequirementMaterialSerializer(ModelSerializer):
+class WarehouseMaterialReadOnlySerializer(ModelSerializer):
     class Meta:
-        model = RequirementMaterial
-        fields = ['process','material','conversion']
+        model = WarehouseMaterial
+        exclude = ['material']
 
-
-class MaterialReceiptSchedule(ModelSerializer):
+class WarehouseScrapReadOnlySerializer(ModelSerializer):
     class Meta:
-        model = MaterialReceiptSchedule
-        fields = ['material_order','date','quantity']
+        model = WarehouseScrapMaterial
+        fields = ['id','material','quantity']
+        depth = 2
 
-class MaterialOrderSerializer(ModelSerializer):
+class WarehouseScrapManagementSerializer(ModelSerializer):
     class Meta:
-        model = MaterialOrder
-        fields = ['purchase_order_material','orderd','arrived','material']
+        model = WarehouseScrapMaterial
+        fields = '__all__'
 
-class MaterialReceiptSerializer(ModelSerializer):
+class MaterialUomReadOnlySerializer(ModelSerializer):
+    warehousematerial = WarehouseMaterialReadOnlySerializer()
     class Meta:
-        model = MaterialReceipt
-        fields = ['quantity','delivery_note_material','material_order']
+        model = Material
+        exclude = ['uom']
+        depth = 1
 
-class DeliveryNoteMaterial(ModelSerializer):
+class UomWarehouseMaterialSerializer(ModelSerializer):
+    material_set = MaterialUomReadOnlySerializer(many=True)
     class Meta:
-        model = DeliveryNoteMaterial
-        fields = ['code','created','note','supplier']
+        model = UnitOfMaterial
+        fields = '__all__'
 
-
-class MaterialProductionReport(ModelSerializer):
+class UomManagementSerializer(ModelSerializer):
     class Meta:
-        model = MaterialProductionReport
-        fields = ['material','quantity','production_report']
+        model = UnitOfMaterial
+        fields = '__all__'
 
 
+class StockWarehouseProductReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = WarehouseProduct
+        exclude = ['warehouse_type']
+        depth = 1
 
+class WarehouseProductManagementSerializer(ModelSerializer):
+    '''
+    serializer for update stock product eg: wip,subcont,finishgood
+    '''
+    class Meta:
+        model = WarehouseProduct
+        fields = '__all__'
+        read_only_fields = ['process','product','warehouse_type']
 
-
+class WarehouseTypeReadOnlySerializer(ModelSerializer):
+    warehouseproduct_set = StockWarehouseProductReadOnlySerializer(many=True)
+    class Meta:
+        model = WarehouseType
+        fields = ['id','name','warehouseproduct_set']
 
 
 

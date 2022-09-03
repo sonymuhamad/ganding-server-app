@@ -49,6 +49,15 @@ router.register(r'warehouse-fg',WarehouseFinishGoodViewSet,basename='warehouse-f
 
 router.register(r'mrp-details',MrpReadOnlyViewSet,basename='mrp-details')
 
+router.register(r'deliverynote-material',DeliveryNoteMaterialReadOnlyViewSet,basename='deliverynote-material')
+router.register(r'deliverynote-material-management',DeliveryNoteMaterialManagementViewSet,basename='deliverynote-material-management')
+router.register(r'material-receipt-management',MaterialReceiptManagementViewSet,basename='material-receipt-management')
+
+router.register(r'deliverynote-customer',DeliveryNoteCustomerReadOnlyViewSet,basename='deliverynote-customer')
+router.register(r'deliverynote-customer-management',DeliveryNoteCustomerManagementViewSet,basename='deliverynote-customer-management')
+router.register(r'product-deliver-management',ProductDeliverManagementViewSet,basename='product-deliver-management')
+
+
 urlpatterns = [
     path('',include(router.urls)),
     path('mrp-management/',mrp_management_post,name='mrp-management'),

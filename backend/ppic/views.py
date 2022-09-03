@@ -1,4 +1,4 @@
-from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet,UpdateModelViewSet,CreateModelViewSet,GetModelViewSet
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet,UpdateModelViewSet,CreateModelViewSet,GetModelViewSet,CreateUpdateModelViewSet
 
 from rest_framework.permissions import AllowAny
 from rest_framework.serializers import ValidationError
@@ -356,10 +356,76 @@ class ReportConversionMaterialManagementViewSet(CreateModelViewSet):
     queryset = ConversionMaterialReport.objects.all()
     
 
+class DeliveryNoteMaterialReadOnlyViewSet(ReadOnlyModelViewSet):
+    serializer_class = SupplierDeliveryNoteReadOnlySerializer
+    permission_classes = [AllowAny]
+    queryset = Supplier.objects.prefetch_related(
+        Prefetch('ppic_deliverynotematerial_related',queryset=DeliveryNoteMaterial.objects.prefetch_related(
+            Prefetch('materialreceipt_set',queryset=MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material')))))
 
 
+class DeliveryNoteMaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
+    serializer_class = DeliveryNoteMaterialManagementSerializer
+    permission_classes = [AllowAny]
+    queryset = DeliveryNoteMaterial.objects.all()
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_dn_material = get_object_or_404(self.queryset,pk=pk)
+        
+        if instance_dn_material.materialreceipt_set.exists():
+            invalid()
+        
+        return super().destroy(request, *args, **kwargs)
+
+class MaterialReceiptManagementViewSet(CreateUpdateDeleteModelViewSet):
+    serializer_class = MaterialReceiptManagementSerializer
+    permission_classes = [AllowAny]
+    queryset = MaterialReceipt.objects.all()
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_mr = get_object_or_404(self.queryset,pk=pk)
+        
+        if instance_mr.quantity > 0:
+            invalid()
+        
+        return super().destroy(request, *args, **kwargs)
 
 
+class DeliveryNoteCustomerReadOnlyViewSet(ReadOnlyModelViewSet):
+    serializer_class = CustomerDeliveryNoteReadOnlySerializer
+    permission_classes = [AllowAny]
+    queryset = Customer.objects.prefetch_related(
+        Prefetch('ppic_deliverynotecustomer_related',queryset=DeliveryNoteCustomer.objects.prefetch_related(
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order')))))
+
+class DeliveryNoteCustomerManagementViewSet(CreateUpdateDeleteModelViewSet):
+    serializer_class = DeliveryNoteCustomerManagementSerializer
+    permission_classes = [AllowAny]
+    queryset = DeliveryNoteCustomer.objects.all()
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_dn_customer = get_object_or_404(self.queryset,pk=pk)
+        if instance_dn_customer.producdelivercustomer_set.exists():
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
+
+
+class ProductDeliverManagementViewSet(CreateUpdateDeleteModelViewSet):
+    serializer_class = ProductDeliverCustomerManagementSerializer
+    permission_classes = [AllowAny]
+    queryset = ProductDeliverCustomer.objects.all()
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_pd = get_object_or_404(self.queryset,pk=pk)
+        if instance_pd.quantity > 0 or instance_pd.paid is True:
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
 
 
 

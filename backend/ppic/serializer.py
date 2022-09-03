@@ -740,6 +740,185 @@ class WarehouseTypeReadOnlySerializer(ModelSerializer):
         fields = ['id','name','warehouseproduct_set']
 
 
+class MaterialReceiptReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = MaterialReceipt
+        exclude = ['delivery_note_material']
+        depth = 2
+
+class DeliveryNoteMaterialReadOnlySerializer(ModelSerializer):
+    materialreceipt_set = MaterialReceiptReadOnlySerializer(many=True)
+    class Meta:
+        model = DeliveryNoteMaterial
+        fields = ['id','code','created','note','materialreceipt_set']
+
+class SupplierDeliveryNoteReadOnlySerializer(ModelSerializer):
+    ppic_deliverynotematerial_related = DeliveryNoteMaterialReadOnlySerializer(many=True)
+    class Meta:
+        model = Supplier
+        fields = '__all__'
+
+class MaterialReceiptManagementSerializer(ModelSerializer):
+    
+    def validate_material_order(self,attrs):
+        if attrs.done:
+                raise ValidationError('Order tersebut sudah selesai')
+        return attrs
+    
+    def create(self, validated_data):
+        material_order = validated_data['material_order']
+        material_order.arrived += validated_data['quantity']
+        whmaterial = material_order.material.warehousematerial
+        whmaterial.quantity += validated_data['quantity']
+        
+        if material_order.arrived >= material_order.ordered:
+            material_order.done = True
+        
+        whmaterial.save()
+        material_order.save()
+
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        instance_mo = instance.material_order
+        instance_wh = instance_mo.material.warehousematerial
+
+        instance_mo.arrived -= instance.quantity
+        instance_wh.quantity -= instance.quantity
+        
+        if instance_wh.quantity < 0:
+            raise ValidationError('Edit data gagal, karena material sudah digunakan untuk produksi')
+        
+        instance_mo.arrived += validated_data['quantity']
+        instance_wh.quantity += validated_data['quantity']
+        
+        if instance_mo.arrived >=instance_mo.ordered:
+            instance_mo.done = True
+        else:
+            instance_mo.done = False
+
+        instance_mo.save()
+        instance_wh.save()
+
+        return super().update(instance, validated_data)
+
+    class Meta:
+        model = MaterialReceipt
+        fields = '__all__'
+
+class DeliveryNoteMaterialManagementSerializer(ModelSerializer):
+
+    class Meta:
+        model = DeliveryNoteMaterial
+        fields = '__all__'
+
+
+class ProductDeliverCustomerReadOnlySerializer(ModelSerializer):
+    '''
+    seriz for get data product delivery depth to 2 relations below
+    '''
+    class Meta:
+        model = ProductDeliverCustomer
+        exclude = ['delivery_note_customer']
+        depth = 2
+
+class DeliveryNoteCustomerReadOnlySerializer(ModelSerializer):
+    '''
+    seriz for get data delivery note
+    '''
+    productdelivercustomer_set = ProductDeliverCustomerReadOnlySerializer(many=True)
+    class Meta:
+        model = DeliveryNoteCustomer
+        exclude = ['customer']
+
+class CustomerDeliveryNoteReadOnlySerializer(ModelSerializer):
+    '''
+    seriz for read data from customer -> delivery note -> product delivery
+    '''
+    ppic_deliverynotecustomer_related = DeliveryNoteCustomerReadOnlySerializer(many=True)
+    class Meta:
+        model = Customer
+        fields = '__all__'
+
+class DeliveryNoteCustomerManagementSerializer(ModelSerializer):
+    '''
+    seriz for management delivery note customer
+    '''
+    class Meta:
+        model = DeliveryNoteCustomer
+        fields = '__all__'
+
+class ProductDeliverCustomerManagementSerializer(ModelSerializer):
+    '''
+    seriz for management product delivery
+    '''    
+    def validate_product_order(self,attrs):
+        if attrs.done:
+            raise ValidationError('Order tersebut sudah selesai')
+
+        return attrs
+    
+    def validate(self, attrs):
+        po = attrs['product_order']
+        available_quantity_deliver = po.ordered - po.delivered
+        wh_product = po.product.ppic_warehouseproduct_related.get(warehouse_type=1)
+
+        if attrs['quantity'] > available_quantity_deliver:
+            raise ValidationError('Jumlah pengiriman melebihi jumlah order')
+        
+        if attrs['quantity'] > wh_product.quantity:
+            raise ValidationError('Stock finish good tidak cukup')
+
+        return super().validate(attrs)
+
+    def fluence_stock(self,po,wh_product,quantity):
+
+        wh_product.quantity -= quantity
+        po.delivered += quantity
+
+        if po.delivered >= po.ordered:
+            po.done = True
+        else:
+            po.done = False
+
+        po.save()
+        wh_product.save()
+
+    def fluence_stock_update(self,po,wh_product,old_quantity,new_quantity):
+        
+        wh_product.quantity += old_quantity
+        po.delivered -= old_quantity
+
+        self.fluence_stock(po,wh_product,new_quantity)
+
+    def update(self, instance, validated_data):
+        if instance.paid:
+            raise ValidationError('Pengiriman product sudah lunas')
+        wh_product = instance.product_order.product.ppic_warehouseproduct_related.get(warehouse_type=1)
+        
+        self.fluence_stock_update(instance.product_order,wh_product,instance.quantity,validated_data['quantity'])
+        
+        return super().update(instance, validated_data)
+
+    def create(self, validated_data):
+        po = validated_data['product_order']
+        wh_product = po.product.ppic_warehouseproduct_related.get(warehouse_type=1)
+        self.fluence_stock(po,wh_product,validated_data['quantity'])
+
+        return super().create(validated_data)
+
+    class Meta:
+        model = ProductDeliverCustomer
+        fields = '__all__'
+
+
+
+
+
+
+
+
+
 
 
 

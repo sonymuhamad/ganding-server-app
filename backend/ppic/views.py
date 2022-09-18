@@ -428,6 +428,33 @@ class ProductDeliverManagementViewSet(CreateUpdateDeleteModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+class ProductionReportReadOnlyViewSet(ReadOnlyModelViewSet):
+    serializer_class = ProductionReportReadOnlySerializer
+    permission_classes = [AllowAny]
+    queryset = ProductionReport.objects.all()
+
+
+class ProductionReportManagementViewSet(CreateUpdateDeleteModelViewSet):
+    serializer_class = ProductionReportManagementSerializer
+    permission_classes = [AllowAny]
+    queryset = ProductionReport.objects.prefetch_related('materialproductionreport_set').prefetch_related('productproductionreport_set')
+    
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_pr = get_object_or_404(self.queryset,pk=pk)
+
+        if instance_pr.quantity > 0 or instance_pr.quantity_not_good > 0:
+            invalid()
+        
+        for material_report in instance_pr.materialproductionreport_set.all():
+            if material_report.quantity > 0:
+                invalid()
+        
+        for product_report in instance_pr.productproductionreport_set.all():
+            if product_report.quantity > 0:
+                invalid()
+
+        return super().destroy(request, *args, **kwargs)
 
 
 

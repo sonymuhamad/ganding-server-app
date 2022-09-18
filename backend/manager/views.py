@@ -9,7 +9,7 @@ from django.db.models import Prefetch
 from django.contrib.auth.models import User,update_last_login
 from django.contrib.auth.hashers import check_password
 from rest_framework import response,status,permissions
-from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateModelViewSet
 
 from marketing.models import Customer, SalesOrder
 from purchasing.models import Supplier,PurchaseOrderMaterial
@@ -58,7 +58,7 @@ def deleteExpiredToken(function):
 
 class AuthViewSet(ModelViewSet):
     
-    # class view for authentication / endpoints for authentication
+    # class view for sign in or get authentication
     
     serializer_class = UserSerializer
     permission_classes = [permissions.AllowAny] 
@@ -102,6 +102,22 @@ class AuthViewSet(ModelViewSet):
 
         return response.Response({'error':{'username':'invalid username'}},status=status.HTTP_400_BAD_REQUEST )
 
+class LogoutViewSet(CreateModelViewSet):
+    '''
+    class for destroy authentication or sign out
+    '''
+    serializer_class = UserSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    @deleteExpiredToken
+    def create(self,request):
+        token = request.data['access_token']
+        r = requests.post('http://127.0.0.1:8000/o/revoke_token/', data = {
+            'token':token,
+            'client_id':CLIENT_ID,
+            'client_secret':CLIENT_SECRET,},)
+
+        return response.Response({'revoke':'success','logout':'success'},status=status.HTTP_200_OK)
 
 
 class UserViewSet(ModelViewSet):

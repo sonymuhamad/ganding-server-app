@@ -37,8 +37,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "rest_framework",
     "corsheaders",
+    "rest_framework",
     "oauth2_provider",
     "manager.apps.ManagerConfig",
     "ppic.apps.PpicConfig",
@@ -172,7 +172,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = "oauth2_provider.AccessToken"
 
-CORS_ALLOWED_ORIGIN = [
+CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 

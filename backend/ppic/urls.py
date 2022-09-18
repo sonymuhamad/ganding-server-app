@@ -57,6 +57,9 @@ router.register(r'deliverynote-customer',DeliveryNoteCustomerReadOnlyViewSet,bas
 router.register(r'deliverynote-customer-management',DeliveryNoteCustomerManagementViewSet,basename='deliverynote-customer-management')
 router.register(r'product-deliver-management',ProductDeliverManagementViewSet,basename='product-deliver-management')
 
+router.register(r'production-report',ProductionReportReadOnlyViewSet,basename='production-report')
+router.register(r'production-report-management',ProductionReportManagementViewSet,basename='production-report-management')
+
 
 urlpatterns = [
     path('',include(router.urls)),

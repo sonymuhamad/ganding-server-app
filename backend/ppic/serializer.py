@@ -1,7 +1,7 @@
 from rest_framework.serializers import ModelSerializer,StringRelatedField,ValidationError
 
 from purchasing.models import Supplier
-from django.db.models import Q
+from django.db.models import Q,Prefetch
 from math import ceil
 from .models import *
 from marketing.models import Customer
@@ -910,6 +910,320 @@ class ProductDeliverCustomerManagementSerializer(ModelSerializer):
     class Meta:
         model = ProductDeliverCustomer
         fields = '__all__'
+
+
+class MaterialProductionReportReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = MaterialProductionReport
+        exclude = ['production_report']
+        depth = 1
+
+class ProductProductionReportReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = ProductProductionReport
+        exclude = ['production_report']
+        depth = 1
+
+class ProductionReportReadOnlySerializer(ModelSerializer):
+    productproductionreport_set = ProductProductionReportReadOnlySerializer(many=True)
+    materialproductionreport_set = MaterialProductionReportReadOnlySerializer(many=True)
+
+    class Meta:
+        model = ProductionReport
+        fields = '__all__'
+        depth = 1        
+
+
+
+class ProductionReportManagementSerializer(ModelSerializer):
+
+
+    def suffciency_req_material_check(self,req_materials,production_quantity:int):
+        
+        for req_material in req_materials:
+            wh_material = req_material.material.warehousematerial
+            stock_in_wh = wh_material.quantity
+            used_material = ceil((production_quantity / req_material.output) * req_material.input)
+            if used_material > stock_in_wh:
+                raise ValidationError(f'Jumlah stok {req_material.material.name} tidak cukup')
+ 
+
+    def sufficiency_req_product_check(self,req_products,production_quantity:int):
+        
+        for req_product in req_products:
+            product = req_product.product
+            wh_product = product.ppic_warehouseproduct_related.first()
+            stock_in_whproduct = wh_product.quantity
+            used_product = (production_quantity/req_product.output) * req_product.input
+            if used_product > stock_in_whproduct:
+                raise ValidationError(f'Jumlah stok produk {product.name} tidak cukup')
+
+    def validate(self, attrs):
+
+        product = attrs['product']
+        process = attrs['process']
+        process_type = process.process_type
+        order = process.order
+        quantity_production = attrs['quantity'] + attrs['quantity_not_good']
+
+        if order > 1 and process_type.id !=2:
+            prev_process = Process.objects.get(order = order-1, product = product)
+            warehouse_wip = prev_process.warehouseproduct_set.filter(warehouse_type__gt = 2).first()
+            
+            if quantity_production > warehouse_wip.quantity:
+                raise ValidationError(f'Jumlah stok wip {product.name} kurang')
+
+        if process_type.id == 2:
+            warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type =2).first()
+            if quantity_production > warehouse_subcont.quantity:
+                raise ValidationError(f'Jumlah produksi yang anda input berlebih')
+
+        if process not in product.ppic_process_related.all():
+            raise ValidationError(f'Proses tersebut bukan bagian dari work in process product {product.name}')
+
+        req_product = process.requirementproduct_set.select_related('product').prefetch_related(
+            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+        
+        req_material = process.requirementmaterial_set.select_related('material__warehousematerial')
+        
+        self.suffciency_req_material_check(req_material,quantity_production)
+        self.sufficiency_req_product_check(req_product,quantity_production)
+
+        return super().validate(attrs)
+
+
+    def create(self, validated_data):
+
+        product = validated_data['product']
+        process = validated_data['process']
+        process_type = process.process_type
+        quantity_production = validated_data['quantity'] + validated_data['quantity_not_good']
+        order = process.order
+        
+        inserted = {
+            'material_report':[],
+            'product_report':[]
+        }
+
+        updated = {
+            'wh_material':[],
+            'wh_product':[]
+        }
+
+        production_report = super().create(validated_data)
+
+        if order > 1 and process_type.id !=2:
+
+            prev_process = Process.objects.filter(order = order-1,product=product).prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+
+            warehouse_wip = prev_process.warehouseproduct_set.first()
+            warehouse_wip.quantity -= (quantity_production)
+            warehouse_wip.save()
+        
+        if process_type.id == 2:
+            warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type = 2).first()
+            warehouse_subcont.quantity -= (quantity_production)
+            warehouse_subcont.save()
+        
+        req_materials = process.requirementmaterial_set.select_related('material__warehousematerial')
+        req_products = process.requirementproduct_set.select_related('product').prefetch_related(
+            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+
+        for req_material in req_materials:
+            material = req_material.material
+            wh_material = material.warehousematerial
+            used_material = (quantity_production / req_material.output) * req_material.input
+            rest_material = ceil(used_material) - used_material
+            
+            if rest_material > 0:
+
+                obj,created = WarehouseScrapMaterial.objects.get_or_create(material=material)
+                obj.quantity += rest_material
+                obj.save()
+
+            wh_material.quantity -= ceil(used_material)
+            updated['wh_material'].append(wh_material)
+            inserted['material_report'].append(MaterialProductionReport(quantity=used_material,material=material,production_report=production_report))
+
+        for req_product in req_products:
+            product = req_product.product
+            wh_product = product.ppic_warehouseproduct_related.first()
+            used_product = ceil((quantity_production / req_product.output) * req_product.input)
+
+            wh_product.quantity -= used_product
+
+            updated['wh_product'].append(wh_product)
+            inserted['product_report'].append(ProductProductionReport(quantity=used_product,product=product,production_report=production_report))
+
+        wh_current_wip = process.warehouseproduct_set.exclude(warehouse_type = 2).first()
+        wh_current_wip.quantity += validated_data['quantity']
+
+        updated['wh_product'].append(wh_current_wip)
+
+        WarehouseProduct.objects.bulk_update(updated['wh_product'],['quantity'])
+        WarehouseMaterial.objects.bulk_update(updated['wh_material'],['quantity'])
+
+        MaterialProductionReport.objects.bulk_create(inserted['material_report'])
+        ProductProductionReport.objects.bulk_create(inserted['product_report'])
+
+        return production_report
+    
+    def invalid_requirement(self):
+
+        return invalid('Tidak bisa mengubah laporan produksi')
+
+    def requirement_check(self,instance):
+        process = instance.process
+
+        material_reports = instance.materialproductionreport_set.select_related('material')
+        product_reports = instance.productproductionreport_set.select_related('product')
+
+        req_materials = process.requirementmaterial_set.select_related('material__warehousematerial')
+        req_products = process.requirementproduct_set.select_related('product').prefetch_related(
+            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+        
+        req_mats = [x.material for x in req_materials]
+        req_prod = [x.product for x in req_products]
+
+
+        for report in material_reports:
+            try:
+                req_mats.remove(report.material)
+            except:
+                self.invalid_requirement()
+
+        for report in product_reports:
+            try:
+                req_prod.remove(report.product)
+            except:
+                self.invalid_requirement()
+
+        if len(req_mats) > 0:
+            self.invalid_requirement()
+        if len(req_prod) > 0:
+            self.invalid_requirement()
+
+        return req_materials,req_products,material_reports,product_reports
+
+    def update(self, instance, validated_data):
+
+        prev_quantity_production = instance.quantity + instance.quantity_not_good
+        quantity_production = validated_data['quantity'] + validated_data['quantity_not_good']
+        
+        instance_product = instance.product
+        process = instance.process
+
+        req_materials,req_products,material_reports,product_reports = self.requirement_check(instance)
+
+        process_type = process.process_type
+        
+        order = process.order
+
+        updated = {
+            'wh_material':[],
+            'wh_product':[],
+            'material_reports':[],
+            'product_reports':[],
+        }
+
+        production_report = super().update(instance, validated_data)
+
+        if order > 1 and process_type.id !=2:
+            prev_process = Process.objects.filter(order = order-1,product=instance_product).prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+
+            warehouse_wip = prev_process.warehouseproduct_set.first()
+            warehouse_wip.quantity += (prev_quantity_production)
+            warehouse_wip.quantity -= (quantity_production)
+            warehouse_wip.save()
+        
+        if process_type.id == 2:
+            warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type = 2).first()
+            warehouse_subcont.quantity += (prev_quantity_production)
+            warehouse_subcont.quantity -= (quantity_production)    
+            warehouse_subcont.save()
+        
+        for req_material in req_materials:
+            material = req_material.material
+            wh_material = material.warehousematerial
+            prev_used_material = (prev_quantity_production / req_material.output) * req_material.input
+            ceiled_prev_used_material = ceil(prev_used_material)
+            prev_rest_material = ceiled_prev_used_material - prev_used_material
+
+            current_used_material = (quantity_production / req_material.output) * req_material.input
+            ceiled_current_used_material = ceil(current_used_material)
+            current_rest_material = ceiled_current_used_material - current_used_material
+
+
+            wh_material.quantity += ceiled_prev_used_material
+            wh_material.quantity -= ceiled_current_used_material
+            
+            try:
+                obj = WarehouseScrapMaterial.objects.get(material=material)
+            except:
+                obj = WarehouseScrapMaterial.objects.create(material=material,quantity=0)
+
+            if current_rest_material > 0:
+                if prev_rest_material > 0:
+                    obj.quantity -= prev_rest_material
+                    obj.quantity += current_rest_material
+                else:
+                    obj.quantity += current_rest_material
+            else:
+                if prev_rest_material > 0:
+                    obj.quantity -= prev_rest_material
+            obj.save()
+
+            
+            updated['wh_material'].append(wh_material)
+
+            for report in material_reports.filter(material=material):
+                report.quantity = ceiled_current_used_material
+                updated['material_reports'].append(report)
+                
+
+        for req_product in req_products:
+            product = req_product.product
+            wh_product = product.ppic_warehouseproduct_related.first()
+            prev_used_product = ceil((prev_quantity_production / req_product.output) * req_product.input)
+            used_product = ceil((quantity_production / req_product.output) * req_product.input)
+
+            wh_product.quantity += prev_used_product
+            wh_product.quantity -= used_product
+
+            updated['wh_product'].append(wh_product)
+
+            for report in product_reports.filter(product=product):
+                report.quantity = used_product
+                updated['product_reports'].append(report)
+                
+
+
+        wh_current_wip = process.warehouseproduct_set.exclude(warehouse_type = 2).first()
+        wh_current_wip.quantity -= instance.quantity
+        wh_current_wip.quantity += validated_data['quantity']
+        
+        updated['wh_product'].append(wh_current_wip)
+
+        WarehouseProduct.objects.bulk_update(updated['wh_product'],['quantity'])
+        WarehouseMaterial.objects.bulk_update(updated['wh_material'],['quantity'])
+
+        MaterialProductionReport.objects.bulk_update(updated['material_reports'],['quantity'])
+        ProductProductionReport.objects.bulk_update(updated['product_reports'],['quantity'])
+
+        return production_report
+    
+
+
+
+    class Meta:
+        model = ProductionReport
+        fields = '__all__'
+
+
+
+
 
 
 

@@ -1,5 +1,5 @@
-from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
-from .serializer import CustomerSerializer,SalesOrderManagementSerializer, SalesOrderReadOnlySerializer,DeliveryCustomerSerializer,DeliveryProductCustomerManagementSerializer,CustomerSalesOrderReadOnlySerializer,ProductOrderManagementSerializer
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
+from .serializer import CustomerDetailReadOnlySerializer, CustomerSerializer, SalesOrderListSerializer,SalesOrderManagementSerializer, SalesOrderReadOnlySerializer,DeliveryCustomerSerializer,DeliveryProductCustomerManagementSerializer,CustomerSalesOrderReadOnlySerializer,ProductOrderManagementSerializer
 from rest_framework import response,status,permissions
 from rest_framework.serializers import ValidationError
 from django.shortcuts import get_object_or_404
@@ -7,11 +7,11 @@ from django.shortcuts import get_object_or_404
 import functools
 import time
 from django.db import connection, reset_queries
-from django.db.models import Prefetch,Q
+from django.db.models import Prefetch,Q,Sum
 
 from manager.shortcuts import invalid
 from .models import Customer, SalesOrder
-from ppic.models import Product, ProductOrder,ProductDeliverCustomer,DeliveryNoteCustomer
+from ppic.models import Product, ProductOrder,ProductDeliverCustomer,DeliveryNoteCustomer,Process,WarehouseProduct
 
 
 
@@ -58,11 +58,9 @@ class CustomerViewset(ModelViewSet):
     viewset for handling customer management (get,retrieve,post,put)
     '''
     serializer_class = CustomerSerializer
-    permission_classes = [permissions.AllowAny]
     queryset = Customer.objects.all()
 
     def destroy(self, request, *args, **kwargs):
-        tes = self.integrity_check(kwargs)
         pk = kwargs['pk']
         queryset = Customer.objects.prefetch_related(
             Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related('productorder_set'))).prefetch_related(
@@ -83,12 +81,11 @@ class CustomerViewset(ModelViewSet):
 
         return super().destroy(request, *args, **kwargs)        
         
-class SalesOrderManagementViewSet(ModelViewSet):
+class SalesOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
     viewset for handling insert and update data from salesorder -> productorder -> deliveryschedule
     '''
     serializer_class = SalesOrderManagementSerializer
-    permission_classes = [permissions.AllowAny]
     queryset = SalesOrder.objects.prefetch_related(
         Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product'))).select_related('customer')
 
@@ -106,7 +103,6 @@ class SalesOrderManagementViewSet(ModelViewSet):
 
 class ProductOrderManagementViewSet(ModelViewSet):
     serializer_class = ProductOrderManagementSerializer
-    permission_classes = [permissions.AllowAny]
     queryset = ProductOrder.objects.prefetch_related('deliveryschedule_set')
 
     def destroy(self, request, *args, **kwargs):
@@ -123,18 +119,34 @@ class SalesOrderReadOnlyViewSet(ReadOnlyModelViewSet):
     viewset for get all data from customer -> salesorder -> productorder -> deliveryschedule of product order
     '''
     serializer_class = CustomerSalesOrderReadOnlySerializer
-    permission_classes = [permissions.AllowAny]
     queryset = Customer.objects.prefetch_related(
         Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related(
             Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product')))))
 
+class SalesOrderListReadOnlyViewSet(ReadOnlyModelViewSet):
+    serializer_class = SalesOrderListSerializer
+    queryset = SalesOrder.objects.prefetch_related(
+            Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product'))).annotate(productordered=Sum('productorder__ordered')).annotate(productdelivered=Sum('productorder__delivered'))
+            
+
+class CustomerDetailReadOnlyViewSet(ReadOnlyModelViewSet):
+
+    serializer_class = CustomerDetailReadOnlySerializer
+    queryset = Customer.objects.prefetch_related(
+        Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related(
+            Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product'))))).prefetch_related(
+        Prefetch('ppic_deliverynotecustomer_related',queryset=DeliveryNoteCustomer.objects.prefetch_related(
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order'))))).prefetch_related(
+        Prefetch('ppic_product_related',queryset=Product.objects.prefetch_related(
+            Prefetch('ppic_process_related',queryset=Process.objects.
+            prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type')))))))
 
 class DeliveryNoteReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     viewset for get all data from customer -> deliverynote -> productdelivery -> productorder
     '''
     serializer_class = DeliveryCustomerSerializer
-    permission_classes = [permissions.AllowAny]
     queryset = Customer.objects.prefetch_related(
         Prefetch('ppic_deliverynotecustomer_related',queryset=DeliveryNoteCustomer.objects.prefetch_related(
             Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order')))))
@@ -145,7 +157,6 @@ class ProductDeliveryManagementSerializer(ModelViewSet):
     viewset for edit paid status of delivery product
     '''
     serializer_class = DeliveryProductCustomerManagementSerializer
-    permission_classes = [permissions.AllowAny]
     queryset = ProductDeliverCustomer.objects.all()
 
 

@@ -1,6 +1,7 @@
 from django.db import models
 from manager.models import  AbstractCustomerVendor,AbstractCode,AbstractCreated
 from django.core.exceptions import ValidationError
+import datetime
 
 # Create your models here.
 
@@ -17,6 +18,7 @@ class AbstractCustomer(models.Model):
 class SalesOrder(AbstractCode,AbstractCustomer,AbstractCreated):
     fixed = models.BooleanField(default=False)
     done = models.BooleanField(default=False)
+    date = models.DateField(default=datetime.date.today)
 
     class Meta(AbstractCode.Meta,AbstractCustomer.Meta,AbstractCreated.Meta):
         pass

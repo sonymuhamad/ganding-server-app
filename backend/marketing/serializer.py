@@ -1,6 +1,8 @@
 from rest_framework.serializers import ModelSerializer,ValidationError,StringRelatedField
 from .models import Customer, SalesOrder
-from ppic.models import DeliverySchedule, Product, ProductOrder,DeliveryNoteCustomer,ProductDeliverCustomer
+from ppic.models import DeliverySchedule, Product, Process, ProductOrder,DeliveryNoteCustomer,ProductDeliverCustomer, WarehouseProduct
+from rest_framework import serializers
+
 from django.db.models import Prefetch
 
 class SalesOrderSerializer(ModelSerializer):
@@ -292,7 +294,7 @@ class SalesOrderReadOnlySerializer(ModelSerializer):
     productorder_set = ProductOrderReadOnlySerializer(many= True)
     class Meta:
         model = SalesOrder
-        fields = ['id','code','customer','productorder_set','fixed']
+        fields = ['id','code','productorder_set','fixed','done','date']
 
 
 class CustomerSalesOrderReadOnlySerializer(ModelSerializer):
@@ -303,6 +305,15 @@ class CustomerSalesOrderReadOnlySerializer(ModelSerializer):
     class Meta:
         model = Customer
         fields = ['id','name','phone','address','marketing_salesorder_related']
+
+class SalesOrderListSerializer(ModelSerializer):
+    productordered = serializers.IntegerField(read_only=True)
+    productdelivered = serializers.IntegerField(read_only=True)
+    productorder_set = ProductOrderReadOnlySerializer(many= True)
+    class Meta:
+        model = SalesOrder
+        fields = '__all__'
+        depth = 1
 
 ### Customer sales order read only serializer
 
@@ -317,7 +328,7 @@ class DeliveryProductCustomerSerializer(ModelSerializer):
     class Meta:
         model = ProductDeliverCustomer
         fields = ['id','quantity','paid','product_order']
-        depth = 1
+        depth = 2
 
 class DeliveryNoteCustomerSerializer(ModelSerializer):
     '''
@@ -361,12 +372,33 @@ class DeliveryNoteCustomerManagementSerializer(ModelSerializer):
 
 ### Customer delivery note management serializer
 
+class WarehouseProductReadOnlySerializer(ModelSerializer):
+    class Meta:
+        model = WarehouseProduct
+        exclude = ['product','process']
+        depth = 1
 
+class ProcessReadOnlySerializer(ModelSerializer):
+    warehouseproduct_set = WarehouseProductReadOnlySerializer(many=True)
+    class Meta:
+        model = Process
+        exclude = ['product']
+        depth = 1
 
+class ProductCustomerReadOnlySerializer(ModelSerializer):
+    ppic_process_related = ProcessReadOnlySerializer(many=True)
+    class Meta:
+        model = Product
+        exclude = ['customer']
+        depth = 1
 
-
-
-
+class CustomerDetailReadOnlySerializer(ModelSerializer):
+    ppic_deliverynotecustomer_related = DeliveryNoteCustomerSerializer(many = True)
+    marketing_salesorder_related = SalesOrderReadOnlySerializer(many=True)
+    ppic_product_related = ProductCustomerReadOnlySerializer(many=True)
+    class Meta:
+        model = Customer
+        fields = '__all__'
 
 
 

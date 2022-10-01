@@ -1,5 +1,7 @@
-from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
-from .serializer import CustomerDetailReadOnlySerializer, CustomerSerializer, SalesOrderListSerializer,SalesOrderManagementSerializer, SalesOrderReadOnlySerializer,DeliveryCustomerSerializer,DeliveryProductCustomerManagementSerializer,CustomerSalesOrderReadOnlySerializer,ProductOrderManagementSerializer
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet,RetrieveModelViewSet
+
+from .serializer import CustomerDetailProductSerializer, CustomerDetailReadOnlySerializer, CustomerSerializer, DeliveryNoteCustomerListSerializer, DeliveryNoteCustomerSerializer, SalesOrderListSerializer,SalesOrderManagementSerializer, SalesOrderReadOnlySerializer,DeliveryCustomerSerializer,DeliveryProductCustomerManagementSerializer,CustomerSalesOrderReadOnlySerializer,ProductOrderManagementSerializer
+
 from rest_framework import response,status,permissions
 from rest_framework.serializers import ValidationError
 from django.shortcuts import get_object_or_404
@@ -7,11 +9,14 @@ from django.shortcuts import get_object_or_404
 import functools
 import time
 from django.db import connection, reset_queries
-from django.db.models import Prefetch,Q,Sum
+from django.db.models import Prefetch,Q,Sum,Count
+from datetime import date, datetime
+import calendar
 
 from manager.shortcuts import invalid
 from .models import Customer, SalesOrder
-from ppic.models import Product, ProductOrder,ProductDeliverCustomer,DeliveryNoteCustomer,Process,WarehouseProduct
+from ppic.models import Product, ProductOrder,ProductDeliverCustomer,DeliveryNoteCustomer,Process,WarehouseProduct,RequirementProduct,RequirementMaterial
+from ppic.serializer import ProductReadOnlySerializer
 
 
 
@@ -94,25 +99,39 @@ class SalesOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
         instance_so = get_object_or_404(self.queryset,pk=pk)
         
         if instance_so.done:
-            invalid()
+            invalid('Sales order has been finished')
 
         queryset_productorder = instance_so.productorder_set.all()
         validate_productorder(queryset_productorder)
 
         return super().destroy(request, *args, **kwargs)
 
-class ProductOrderManagementViewSet(ModelViewSet):
+class ProductOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
     serializer_class = ProductOrderManagementSerializer
-    queryset = ProductOrder.objects.prefetch_related('deliveryschedule_set')
+    queryset = ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('sales_order')
 
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']
         instance_po = get_object_or_404(self.queryset,pk=pk)
 
-        if instance_po.delivered > 0:
+        if instance_po.delivered > 0 or instance_po.sales_order.fixed :
             invalid()
 
         return super().destroy(request, *args, **kwargs)
+
+class ProductDetailViewSet(RetrieveModelViewSet):
+    '''
+    a viewset for retrieve product detail for marketing->customer->product detail page
+    '''
+    serializer_class = ProductReadOnlySerializer
+    queryset = Product.objects.prefetch_related(
+            Prefetch('ppic_process_related',queryset=Process.objects.
+            prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type'))).
+            prefetch_related(
+                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
+            prefetch_related(
+                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type'))).select_related('type')
 
 class SalesOrderReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
@@ -126,8 +145,18 @@ class SalesOrderReadOnlyViewSet(ReadOnlyModelViewSet):
 class SalesOrderListReadOnlyViewSet(ReadOnlyModelViewSet):
     serializer_class = SalesOrderListSerializer
     queryset = SalesOrder.objects.prefetch_related(
-            Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product'))).annotate(productordered=Sum('productorder__ordered')).annotate(productdelivered=Sum('productorder__delivered'))
+            Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product').prefetch_related(
+                Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('delivery_note_customer'))))).annotate(productordered=Sum('productorder__ordered')).annotate(productdelivered=Sum('productorder__delivered'))
+
+class SalesOrderListThisMonthViewSet(ReadOnlyModelViewSet):
+    serializer_class = SalesOrderListSerializer
+    queryset = SalesOrder.objects.prefetch_related(
+            Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related('deliveryschedule_set').select_related('product').prefetch_related(
+                Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('delivery_note_customer'))))).annotate(productordered=Sum('productorder__ordered')).annotate(productdelivered=Sum('productorder__delivered')).filter(Q(date__gte=f'{datetime.today().year}-{datetime.today().month}-1'),Q(date__lte=f'{datetime.today().year}-{datetime.today().month}-{calendar.monthrange(date.today().year, datetime.today().month)[1]}'))
             
+class ProductCustomerViewSet(ReadOnlyModelViewSet):
+    serializer_class = CustomerDetailProductSerializer
+    queryset = Customer.objects.prefetch_related('ppic_product_related')
 
 class CustomerDetailReadOnlyViewSet(ReadOnlyModelViewSet):
 
@@ -141,6 +170,22 @@ class CustomerDetailReadOnlyViewSet(ReadOnlyModelViewSet):
             Prefetch('ppic_process_related',queryset=Process.objects.
             prefetch_related(
                 Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type')))))))
+
+class DeliveryNoteListViewSet(ReadOnlyModelViewSet):
+    '''
+    for delivery note page
+    '''
+    serializer_class = DeliveryNoteCustomerListSerializer
+    queryset = DeliveryNoteCustomer.objects.prefetch_related(
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order'))).select_related('vehicle','customer','driver').order_by('-created')
+
+class PendingDeliveryNoteListViewSet(ReadOnlyModelViewSet):
+    '''
+    for dashboard page  `delivery note that invoice status is pending`
+    '''
+    serializer_class = DeliveryNoteCustomerListSerializer
+    queryset = DeliveryNoteCustomer.objects.prefetch_related(
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.filter(paid=False).select_related('product_order','product_order__sales_order','product_order__product'))).select_related('vehicle','customer','driver').filter(productdelivercustomer__paid=False).distinct()
 
 class DeliveryNoteReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
@@ -158,6 +203,9 @@ class ProductDeliveryManagementSerializer(ModelViewSet):
     '''
     serializer_class = DeliveryProductCustomerManagementSerializer
     queryset = ProductDeliverCustomer.objects.all()
+
+
+
 
 
 

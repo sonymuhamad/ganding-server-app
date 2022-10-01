@@ -29,13 +29,13 @@ class WarehouseProductReadOnlySerializer(ModelSerializer):
 class RequirementMaterialReadOnlySerializer(ModelSerializer):
     class Meta:
         model = RequirementMaterial
-        fields = ['id','conversion','material']
-        depth = 1
+        exclude = ['process']
+        depth = 2
 
 class RequirementProductReadOnlySerializer(ModelSerializer):
     class Meta:
         model = RequirementProduct
-        fields = ['id','conversion','product']
+        exclude = ['process']
         depth = 1
 
 class ProcessReadOnlySerializer(ModelSerializer):
@@ -53,7 +53,7 @@ class ProductReadOnlySerializer(ModelSerializer):
 
     class Meta:
         model = Product
-        fields = ['id','code','name','weight','image','process','price','ppic_process_related','type']
+        fields = '__all__'
         depth = 1
 
 class ProductCustomerReadOnlySerializer(ModelSerializer):

@@ -1,6 +1,6 @@
 from rest_framework.permissions import AllowAny
 from django.db.models import Prefetch
-from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
 from rest_framework.serializers import ValidationError
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
@@ -72,7 +72,7 @@ class PurchaseOrderReadOnlyViewSet(ReadOnlyModelViewSet):
             Prefetch('materialorder_set',queryset=MaterialOrder.objects.select_related('material').prefetch_related('materialreceiptschedule_set')))))
 
 
-class PurchaseOrderManagementViewSet(ModelViewSet):
+class PurchaseOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
     serializer_class = PurchaseOrderManagementSerializer
     permission_classes = [AllowAny]
 
@@ -93,7 +93,7 @@ class PurchaseOrderManagementViewSet(ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class MaterialOrderManagementViewSet(ModelViewSet):
+class MaterialOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
     serializer_class = MaterialOrderManagementSerializer
     permission_classes = [AllowAny]
 

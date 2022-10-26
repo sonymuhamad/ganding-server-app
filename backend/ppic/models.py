@@ -1,3 +1,5 @@
+from pyexpat import model
+from django.utils import timezone
 from django.db import models
 from marketing.models import AbstractCustomer,SalesOrder
 from purchasing.models import AbstractSupplier,PurchaseOrderMaterial
@@ -36,12 +38,15 @@ class AbstractWarehouse(models.Model):
     class Meta:
         abstract = True
 
+    def __str__(self) -> str:
+        return str(self.quantity)
 
 
-class AbstractStuff(models.Model):
+class AbstractStuff(AbstractCreated):
     name = models.CharField(max_length=255)
     weight = models.FloatField(blank=True)
     image = models.ImageField(upload_to="images/",blank=True)
+    last_update = models.DateTimeField(blank=True,null=True)
 
     def __str__(self) -> str:
         return self.name
@@ -115,17 +120,20 @@ class BasedConversionMaterial(models.Model):
     class Meta:
         unique_together = [['material_input','material_output']]
 
-class ConversionMaterialReport(models.Model):
+class ConversionMaterialReport(AbstractCreated):
     quantity_input = models.PositiveIntegerField()
     material_input = models.ForeignKey(Material,on_delete=models.CASCADE,related_name='report_material_inputs')
     quantity_output = models.PositiveIntegerField()
     material_output = models.ForeignKey(Material,on_delete=models.CASCADE,related_name='report_material_outputs')
+    last_update = models.DateTimeField(blank=True,null=True)
+    
 
 class WarehouseMaterial(AbstractWarehouse):
     '''
     every material stock are store in this table
     '''
     material = models.OneToOneField(Material,on_delete=models.CASCADE)
+    
 
 class WarehouseScrapMaterial(models.Model):
     '''
@@ -181,7 +189,7 @@ class AbstractDeliveryNote(AbstractDelivery):
 
 class DeliveryNoteSubcont(AbstractDeliveryNote,AbstractSupplier):
     '''
-    
+    model to save all delivery note subcont to supplier,
     '''
     class Meta(AbstractDeliveryNote.Meta,AbstractSupplier.Meta):
         pass
@@ -189,7 +197,7 @@ class DeliveryNoteSubcont(AbstractDeliveryNote,AbstractSupplier):
 
 class DeliveryNoteCustomer(AbstractDeliveryNote,AbstractCustomer):
     '''
-    
+    model to save delivery note product to supplier
     '''
     class Meta(AbstractCustomer.Meta,AbstractDeliveryNote.Meta):
         pass
@@ -213,13 +221,14 @@ class ProductDeliverCustomer(AbstractQuantity):
     product_order = models.ForeignKey(ProductOrder,on_delete=models.CASCADE)
     delivery_note_customer = models.ForeignKey(DeliveryNoteCustomer,on_delete=models.CASCADE)
     paid = models.BooleanField(default=False)
+    schedules = models.OneToOneField(DeliverySchedule,blank=True,null=True,on_delete=models.SET_NULL)
 
-
-class MaterialRequirementPlanning(AbstractQuantity,AbstractMaterial):
+class MaterialRequirementPlanning(AbstractQuantity,AbstractMaterial,AbstractCreated):
     '''
     all requirement material for production
     '''
-    class Meta(AbstractQuantity.Meta,AbstractMaterial.Meta):
+    last_update = models.DateTimeField(blank=True,null=True)
+    class Meta(AbstractQuantity.Meta,AbstractMaterial.Meta,AbstractCreated.Meta):
         pass
 
 class DetailMrp(AbstractQuantity,AbstractProduct):
@@ -254,6 +263,7 @@ class DeliveryNoteMaterial(AbstractDelivery,AbstractSupplier):
     '''
     delivery note that inputted when material receipt
     '''
+    image = models.ImageField(upload_to="images/",blank=True)
     class Meta(AbstractDelivery.Meta,AbstractSupplier.Meta):
         pass
 
@@ -264,6 +274,7 @@ class MaterialReceipt(AbstractQuantity):
     '''
     delivery_note_material = models.ForeignKey(DeliveryNoteMaterial,on_delete=models.CASCADE)
     material_order = models.ForeignKey(MaterialOrder,on_delete=models.CASCADE)
+    schedules = models.OneToOneField(MaterialReceiptSchedule,blank=True,null=True,on_delete=models.SET_NULL)
 
 
 class ProductionReport(AbstractProduct,AbstractCreated,AbstractQuantity):
@@ -274,6 +285,7 @@ class ProductionReport(AbstractProduct,AbstractCreated,AbstractQuantity):
     quantity_not_good = models.PositiveBigIntegerField(default=0)
     operator = models.ForeignKey(Operator,on_delete=models.CASCADE)
     machine = models.ForeignKey(Machine,on_delete=models.CASCADE)
+    last_update = models.DateTimeField(blank=True,null=True)
 
     class Meta(AbstractProduct.Meta,AbstractCreated.Meta,AbstractQuantity.Meta):
         pass

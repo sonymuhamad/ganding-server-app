@@ -1,6 +1,8 @@
+from email.policy import default
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
+from datetime import date
 
 class AbstractCustomerVendor(models.Model):
     name = models.CharField(max_length=255)
@@ -26,7 +28,7 @@ class AbstractQuantity(models.Model):
 
 class AbstractSchedule(AbstractQuantity):
     date = models.DateField()
-    
+    fulfilled_quantity = models.PositiveIntegerField(default=0)
     class Meta:
         abstract = True
 
@@ -46,8 +48,9 @@ class AbstractCreated(models.Model):
         abstract = True
 
 class AbstractDelivery(AbstractCode,AbstractCreated):
+    date = models.DateField(default=date.today)
     note = models.TextField(default='Delivery Note')
-
+    last_update = models.DateTimeField(blank=True,null=True)
     class Meta(AbstractCode.Meta,AbstractCreated.Meta):
         abstract = True
 

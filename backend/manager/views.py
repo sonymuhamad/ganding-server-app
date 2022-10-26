@@ -121,6 +121,9 @@ class LogoutViewSet(CreateModelViewSet):
 
 
 class UserViewSet(ModelViewSet):
+    '''
+    for add new user `password is created by default so plant-manager just input username,email and pick group`
+    '''
     serializer_class = UserManagementSerializer
     permission_classes = [permissions.AllowAny]
     queryset = User.objects.prefetch_related('groups')

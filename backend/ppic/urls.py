@@ -6,30 +6,29 @@ from .views import *
 
 router = DefaultRouter()
 
-mrp_management_post = MrpManagementViewSet.as_view({
-    'post':'create',
-    'get':'list',
-})
-
-mrp_management_put_and_delete = MrpManagementViewSet.as_view({
-    'put':'update',
-    'delete':'destroy',
-})
-
-warehouse_management_put = WarehouseProductManagementViewSet.as_view({
-    'put':'update'
-})
-
 
 router.register(r'uom-management',UomManagementViewSet,basename='uom-management')
+router.register(r'machine',MachineViewSet,basename='machine')
+router.register(r'operator',OperatorViewSet,basename='operator')
 
-router.register(r'product-detail',ProductCustomerReadOnlyViewSet,basename='product-detail')
+router.register(r'product-type',ProductTypeViewSet,basename='product-type')
+router.register(r'process-type',ProcessTypeViewSet,basename='process-type')
+router.register(r'customer-lists',CustomerListViewSet,basename='customer-lists')
+router.register(r'product-lists',ProductListViewSet,basename='product-lists')
+router.register(r'material-lists',MaterialListViewSet,basename='material-lists')
+
+router.register(r'product-list',ProductListReadOnlyViewSet,basename='product-list')
+router.register(r'product-detail',ProductDetailReadOnlyViewSet,basename='product-detail')
 router.register(r'product-management',ProductManagementViewSet,basename='product-management')
 router.register(r'requirement-product',RequirementProductViewSet,basename='requirement-product')
 
 router.register(r'requirement-material',RequirementMaterialViewSet,basename='requirement-material')
-router.register(r'material-detail',MaterialSupplierReadOnlyViewSet,basename='material-detail')
-router.register(r'material',MaterialSerializer,basename='material')
+router.register(r'supplier-material-list',MaterialSupplierReadOnlyViewSet,basename='supplier-material-list')
+router.register(r'material',MaterialViewSet,basename='material')
+router.register(r'material-detail',MaterialDetailViewSet,basename='material-detail')
+router.register(r'uom-list',UomListViewSet,basename='uom-list')
+router.register(r'supplier-list',SupplierListViewSet,basename='supplier-list')
+
 
 router.register(r'uom-conversion-detail',UomConversionReadOnlyViewSet,basename='uom-conversion-detail')
 router.register(r'uom-conversion-management',UomConversionManagementViewSet,basename='uom-conversion-management')
@@ -48,7 +47,10 @@ router.register(r'warehouse-wip',WarehouseWipViewSet,basename='warehouse-wip')
 router.register(r'warehouse-fg',WarehouseFinishGoodViewSet,basename='warehouse-fg')
 
 router.register(r'mrp-details',MrpReadOnlyViewSet,basename='mrp-details')
+router.register(r'mrp-management',MrpManagementViewSet,basename='mrp-management')
 
+router.register(r'material-order-list',MaterialOrderReadOnlyViewSet,basename='material-order-list')
+router.register(r'material-receipt-schedule',MaterialReceiptScheduleReadOnlyViewSet,basename='material-receipt-schedule')
 router.register(r'deliverynote-material',DeliveryNoteMaterialReadOnlyViewSet,basename='deliverynote-material')
 router.register(r'deliverynote-material-management',DeliveryNoteMaterialManagementViewSet,basename='deliverynote-material-management')
 router.register(r'material-receipt-management',MaterialReceiptManagementViewSet,basename='material-receipt-management')
@@ -59,10 +61,9 @@ router.register(r'product-deliver-management',ProductDeliverManagementViewSet,ba
 
 router.register(r'production-report',ProductionReportReadOnlyViewSet,basename='production-report')
 router.register(r'production-report-management',ProductionReportManagementViewSet,basename='production-report-management')
-
+router.register(r'production-priority',ProductionPriorityViewSet,basename='production-priority')
+router.register(r'production-list',CustomerProductionListReadOnlyViewSet,basename='production-list')
 
 urlpatterns = [
-    path('',include(router.urls)),
-    path('mrp-management/',mrp_management_post,name='mrp-management'),
-    path('mrp-management/<int:pk>/',mrp_management_put_and_delete,name='mrp-management'),    
+    path('',include(router.urls)),  
 ]

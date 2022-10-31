@@ -161,9 +161,12 @@ class ProductManagementViewSet(CreateUpdateDeleteModelViewSet):
 
     def fields_check(self,data):
         
-        process = data.get('ppic_process_related',[])
+        many_process = data.get('ppic_process_related',[])
 
-        for process in process:
+        if many_process == []:
+            return {**data,'ppic_process_related':[]}
+
+        for process in many_process:
             reqproduct = process.get('requirementproduct_set',None)
             reqmaterial = process.get('requirementmaterial_set',None)
             if reqproduct is None:
@@ -434,7 +437,6 @@ class MrpManagementViewSet(ModelViewSet):
                 'weight':product.weight,
                 'image':product.image,
                 'process':product.process,
-                'price':product.price,
                 'customer':product.customer,
                 'type':product.type,
                 'created':product.created,
@@ -887,7 +889,6 @@ class ProductionPriorityViewSet(ReadOnlyModelViewSet):
                 'weight':product.weight,
                 'image':product.image,
                 'process':product.process,
-                'price':product.price,
                 'customer':product.customer,
                 'type':product.type,
                 'created':product.created,
@@ -962,4 +963,55 @@ class ProductionReportManagementViewSet(CreateUpdateDeleteModelViewSet):
                 invalid()
 
         return super().destroy(request, *args, **kwargs)
+
+
+
+class DeliveryNoteSubcontManagementViewSet(CreateUpdateDeleteModelViewSet):
+    serializer_class = DeliveryNoteSubcontManagementSerializer
+    queryset = DeliveryNoteSubcont.objects.all()
+
+class ProductDeliverySubcontManagementViewSet(CreateUpdateDeleteModelViewSet):
+    serializer_class = ProductDeliverySubcontManagementSerializer
+    queryset = ProductDeliverSubcont.objects.prefetch_related('subcontreceipt_set').select_related('product','process','delivery_note_subcont')
+
+class ProcessManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a viewset that handle management create update delete for process, nested to requirement material, requirement product, warehouse product
+    '''
+    serializer_class = ProcessPartialManagementSerializer
+    queryset = Process.objects.prefetch_related(Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','process'))).prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product','process'))).prefetch_related(Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','product'))).select_related('product','process_type')
+
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_process = get_object_or_404(self.queryset,pk=pk)
+        
+        for wh_products in instance_process.warehouseproduct_set.all():
+            if wh_products.quantity > 0:
+                invalid()
+        
+        whProduct = instance_process.warehouseproduct_set.exclude(warehouse_type=2).get()
+        product = instance_process.product
+        len_queryset_process = product.ppic_process_related.count()
+
+        if whProduct.warehouse_type.id == 1 and len_queryset_process > 1 :
+            ## change the previous of the last process to finished good, before delete selected process
+
+            order = instance_process.order
+            wh_type_fg = WarehouseType.objects.get(pk=1)
+
+            try:
+                prev_process = product.ppic_process_related.get(order = (order - 1))
+                wh_product_prev_process = prev_process.warehouseproduct_set.exclude(warehouse_type=2).get()
+                wh_product_prev_process.warehouse_type = wh_type_fg
+                wh_product_prev_process.save()
+
+            except:
+                prev_process = product.ppic_process_related.get(order = (order - 2))
+                wh_product_prev_process = prev_process.warehouseproduct_set.exclude(warehouse_type=2).get()
+                wh_product_prev_process.warehouse_type = wh_type_fg
+                wh_product_prev_process.save()
+        
+        return super().destroy(request, *args, **kwargs)
+
 

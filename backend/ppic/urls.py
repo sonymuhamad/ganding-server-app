@@ -20,6 +20,7 @@ router.register(r'material-lists',MaterialListViewSet,basename='material-lists')
 router.register(r'product-list',ProductListReadOnlyViewSet,basename='product-list')
 router.register(r'product-detail',ProductDetailReadOnlyViewSet,basename='product-detail')
 router.register(r'product-management',ProductManagementViewSet,basename='product-management')
+router.register(r'process-management',ProcessManagementViewSet,basename='process-management')
 router.register(r'requirement-product',RequirementProductViewSet,basename='requirement-product')
 
 router.register(r'requirement-material',RequirementMaterialViewSet,basename='requirement-material')
@@ -57,7 +58,10 @@ router.register(r'material-receipt-management',MaterialReceiptManagementViewSet,
 
 router.register(r'deliverynote-customer',DeliveryNoteCustomerReadOnlyViewSet,basename='deliverynote-customer')
 router.register(r'deliverynote-customer-management',DeliveryNoteCustomerManagementViewSet,basename='deliverynote-customer-management')
-router.register(r'product-deliver-management',ProductDeliverManagementViewSet,basename='product-deliver-management')
+router.register(r'product-delivery',ProductDeliverManagementViewSet,basename='product-deliver-management')
+
+router.register(r'delivery-note-subcont',DeliveryNoteSubcontManagementViewSet,basename='delivery-note-subcont')
+router.register(r'product-delivery-subcont',ProductDeliverySubcontManagementViewSet,basename='product-delivery-subcont')
 
 router.register(r'production-report',ProductionReportReadOnlyViewSet,basename='production-report')
 router.register(r'production-report-management',ProductionReportManagementViewSet,basename='production-report-management')

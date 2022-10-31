@@ -1,10 +1,10 @@
-from pyexpat import model
 from django.utils import timezone
 from django.db import models
 from marketing.models import AbstractCustomer,SalesOrder
 from purchasing.models import AbstractSupplier,PurchaseOrderMaterial
 from manager.models import AbstractCreated, AbstractQuantity,AbstractDelivery,AbstractCode,AbstractSchedule,AbstractType
-# Create your models here.
+
+from datetime import date
 
 class Driver(models.Model):
     name = models.CharField(max_length=200)
@@ -59,7 +59,6 @@ class Product(AbstractStuff,AbstractCode,AbstractCustomer):
     '''
     type = models.ForeignKey(ProductType,on_delete=models.CASCADE)
     process = models.PositiveSmallIntegerField()
-    price = models.PositiveBigIntegerField(blank=True)
     
     class Meta(AbstractCode.Meta,AbstractStuff.Meta,AbstractCustomer.Meta):
         pass
@@ -151,6 +150,7 @@ class Process(AbstractProduct):
     order = models.PositiveIntegerField()
     class Meta(AbstractProduct.Meta):
         ordering = ['order']
+        unique_together = [['order','product']]
 
 class WarehouseProduct(AbstractWarehouse,AbstractProduct):
     '''
@@ -209,9 +209,30 @@ class ProductDeliverSubcont(AbstractQuantity,AbstractProduct):
     model to handle all product subcont shipped on each delivery note
     '''
     deliver_note_subcont = models.ForeignKey(DeliveryNoteSubcont,on_delete=models.CASCADE)
+    process = models.ForeignKey(Process,on_delete=models.CASCADE)
     
     class Meta(AbstractQuantity.Meta,AbstractProduct.Meta):
         pass
+
+class RequirementProductsubcont(AbstractProduct,AbstractQuantity):
+    '''
+    '''
+    product_subcont = models.ForeignKey(ProductDeliverSubcont,on_delete=models.CASCADE)
+    class Meta(AbstractProduct.Meta,AbstractQuantity.Meta):
+        pass
+
+class RequirementMaterialSubcont(AbstractMaterial,AbstractQuantity):
+    '''
+    '''
+    product_subcont = models.ForeignKey(ProductDeliverSubcont,on_delete=models.CASCADE)
+    class Meta(AbstractMaterial.Meta,AbstractQuantity.Meta):
+        pass
+
+class ReceiptSubcontSchedule(AbstractSchedule):
+    '''
+    schedule for receipt of product SUBCONSTRUCTION
+    '''
+    product_subcont = models.ForeignKey(ProductDeliverSubcont,on_delete=models.CASCADE)
 
 
 class ProductDeliverCustomer(AbstractQuantity):
@@ -261,7 +282,7 @@ class MaterialReceiptSchedule(AbstractSchedule):
 
 class DeliveryNoteMaterial(AbstractDelivery,AbstractSupplier):
     '''
-    delivery note that inputted when material receipt
+    receipt note
     '''
     image = models.ImageField(upload_to="images/",blank=True)
     class Meta(AbstractDelivery.Meta,AbstractSupplier.Meta):
@@ -276,6 +297,23 @@ class MaterialReceipt(AbstractQuantity):
     material_order = models.ForeignKey(MaterialOrder,on_delete=models.CASCADE)
     schedules = models.OneToOneField(MaterialReceiptSchedule,blank=True,null=True,on_delete=models.SET_NULL)
 
+class ReceiptNoteSubcont(AbstractDelivery,AbstractSupplier):
+    '''
+    receipt note for product subconstruction
+    '''
+    image = models.ImageField(upload_to='images/',blank=True)
+    class Meta(AbstractDelivery.Meta,AbstractSupplier.Meta):
+        pass
+
+class SubcontReceipt(AbstractQuantity):
+    '''
+    table for all product received from subconstruction
+    '''
+    receipt_note = models.ForeignKey(ReceiptNoteSubcont,on_delete=models.CASCADE)
+    product_subcont = models.ForeignKey(ProductDeliverSubcont,on_delete=models.CASCADE)
+    schedules = models.OneToOneField(ReceiptSubcontSchedule,blank=True,null=True,on_delete=models.SET_NULL)
+    quantity_not_good = models.PositiveBigIntegerField(default=0)
+
 
 class ProductionReport(AbstractProduct,AbstractCreated,AbstractQuantity):
     '''
@@ -286,6 +324,7 @@ class ProductionReport(AbstractProduct,AbstractCreated,AbstractQuantity):
     operator = models.ForeignKey(Operator,on_delete=models.CASCADE)
     machine = models.ForeignKey(Machine,on_delete=models.CASCADE)
     last_update = models.DateTimeField(blank=True,null=True)
+    date = models.DateField(default=date.today)
 
     class Meta(AbstractProduct.Meta,AbstractCreated.Meta,AbstractQuantity.Meta):
         pass

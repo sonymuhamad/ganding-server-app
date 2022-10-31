@@ -1,11 +1,12 @@
 from rest_framework.serializers import ModelSerializer,StringRelatedField,ValidationError,PrimaryKeyRelatedField
 from rest_framework import serializers
 from purchasing.models import Supplier
-from django.db.models import Q,Prefetch
+from django.db.models import Q,Prefetch,Count
 from math import ceil
 from .models import *
 from marketing.models import Customer
 from manager.shortcuts import invalid
+from django.utils import timezone
 
 class DriverSerializer(ModelSerializer):
     class Meta:
@@ -179,10 +180,16 @@ class ProcessManagementSerializer(ModelSerializer):
     class Meta:
         model = Process
         fields = ['id','process_name','process_type','requirementproduct_set','requirementmaterial_set']
-        read_only_fields = ['requirementproduct_set','requirementmaterial_set']
 
 class ProductManagementSerializer(ModelSerializer):
+    '''
+    this serializer is used to create product nested to process then to requirement material, requirement product, warehouse product,
 
+    but for update, its just update data product, no more.
+    
+    i've just moved update process to update partial process in ProcessPartialManagementSerializer
+
+    '''
     ppic_process_related = ProcessManagementSerializer(many=True)
 
 
@@ -200,19 +207,128 @@ class ProductManagementSerializer(ModelSerializer):
 
                 self.search(product_in_process,manyProcessOfCertainProduct)
 
+    def update(self, instance, validated_data):
+        '''
+        update product
+        '''       
+        many_process = validated_data.pop('ppic_process_related')
+        len_process = len(many_process)
 
-    def validate_ppic_process_related(self,attrs):
-        len_attrs = len(attrs)
-        if len_attrs == 0:
-            invalid('Product setidaknya memiliki satu proses')
+        instance_old_process = instance.ppic_process_related.all()
+        len_instance_process = len(instance_old_process)
+        instance.last_update = timezone.now()
+        instance.process = len_process
+        instance.save(update_fields=['last_update','process'])
+
+        return super().update(instance, validated_data)
         
-        requirementmaterial = attrs[0]['requirementmaterial_set']
-        len_requirement_material = len(requirementmaterial)
-        if len_requirement_material == 0:
-            invalid('Proses pertama setidaknya memiliki satu kebutuhan material')
-        
+    def create(self, validated_data):
+        '''
+        create product -> process -> requirement material & requirement product & warehouse product
+        '''
+        many_process = validated_data.pop('ppic_process_related')
+        len_process = len(many_process)
+
+        req_material_bulk = []
+        req_product_bulk = []
+        whproduct_bulk = []
+        order = 1
+
+        for process in many_process:
+
+            for req_product in process['requirementproduct_set']:
+
+                if validated_data['product'] == req_product['product']:
+                    invalid('Error in assembly product')
+                
+                manyProcess = req_product['product'].ppic_process_related.prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product')))
+
+                self.search(validated_data['product'],manyProcess)
+
+        instance_product = Product.objects.create(**validated_data,process=len_process)
+        wh_type_subcont = WarehouseType.objects.get(pk=2)
+        wh_type_fg = WarehouseType.objects.get(pk=1)
+
+        for each_process in many_process:
+            many_req_material = each_process.pop('requirementmaterial_set')
+            many_req_product = each_process.pop('requirementproduct_set')
+            instance_process = Process.objects.create(**each_process,product=instance_product,order=order)
+            process_type = instance_process.process_type.id
+
+            for req_material in many_req_material:
+                req_material_bulk.append(RequirementMaterial(**req_material,process=instance_process))
+            for req_product in many_req_product:
+                req_product_bulk.append(RequirementProduct(**req_product,process=instance_process))
+            
+            wh_wip_type,created = WarehouseType.objects.get_or_create(id=order+2,name=f'Wip{order}')            
+
+            wh_product = {
+                'quantity':0,
+                'process':instance_process,
+                'product':instance_product,
+                'warehouse_type':wh_type_fg if len_process == order else wh_wip_type,
+            }
+
+            if process_type == 2:
+                whproduct_bulk.append(WarehouseProduct(**wh_product))
+
+                wh_product['warehouse_type'] = wh_type_subcont
+                whproduct_bulk.append(WarehouseProduct(**wh_product))
+            else:
+                whproduct_bulk.append(WarehouseProduct(**wh_product))
+
+            order += 1
+
+        RequirementMaterial.objects.bulk_create(req_material_bulk)
+        RequirementProduct.objects.bulk_create(req_product_bulk)
+        WarehouseProduct.objects.bulk_create(whproduct_bulk)
+
+        return instance_product
+
+    class Meta:
+        model = Product
+        exclude = ['process']
+        read_only_fields = ['created','last_update']
+
+class ProcessPartialManagementSerializer(ModelSerializer):
+    '''
+    seriz for management data process of every product
+    '''
+
+    requirementproduct_set = RequirementProductManagement(many=True)
+    requirementmaterial_set = RequirementMaterialManagementSerializer(many=True)
+
+    def search(self,product_in_process,manyProcess):
+
+        for process in manyProcess:
+            req_products = process.requirementproduct_set.all()
+
+            for req_product in req_products:
+                product = req_product.product
+                if product == product_in_process:
+                    raise ValidationError(f'Error in assembly product')
+                
+                manyProcessOfCertainProduct = product.ppic_process_related.prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product')))
+
+                self.search(product_in_process,manyProcessOfCertainProduct)
+
+    def validate(self, attrs):
+        product = attrs['product']
+        order = attrs['order']
+        len_process = product.ppic_process_related.count()
+
+        if order > (len_process + 1):
+            invalid(f"Cannot add Wip{order} to this product ")
+
+        return super().validate(attrs)
+
+    def validate_order(self,attrs):
+
+        if attrs == 0:
+            invalid('Cannot set zero to wip manufacturing process')
+
         return attrs
-    
+
     def perform_delete(self, lst:list) -> None:
         for instance in lst:
             instance.delete()
@@ -232,38 +348,99 @@ class ProductManagementSerializer(ModelSerializer):
         self.perform_delete(obj['deleted'])
         self.perform_insert(obj['inserted'],obj['instance'])
         self.perform_update(obj['updated'],obj['instance'],['input','output','product','process'])
-    
-    def changed_warehouseproduct(self,obj:dict) -> None:
-        self.perform_delete(obj['deleted'])
-        self.perform_insert(obj['inserted'],obj['instance'])
-        self.perform_update(obj['updated'],obj['instance'],['quantity','warehouse_type'])
-    
-    def changed_process(self,obj:dict) -> None:
-        
-        temp = 0
-        for process in obj['deleted']:
-            qty_wh = process.warehouseproduct_set.exclude(warehouse_type = 2).get().quantity
-            temp += qty_wh
-        
-        last_wh = obj['updated'][-1].warehouseproduct_set.exclude(warehouse_type = 2 ).get() 
-        last_wh.quantity += temp
-        last_wh.save()
-        
-        ##### take all quantity deleted from warehouseproduct to updated warehouseproduct
-        
-        self.perform_delete(obj['deleted'])
-        self.perform_update(obj['updated'],obj['instance'],['process_name','order','process_type'])
 
     def perform_changing(self,objs:dict) -> None:
         self.changed_product(objs['product'])
         self.changed_material(objs['material'])
-        self.changed_warehouseproduct(objs['warehouseproduct'])
-        self.changed_process(objs['process'])
+
+    def create(self, validated_data):
+        '''
+        create process -> material requirements & product requirements & warehouse product
+        '''
+
+        inserted = {
+            'req_materials':[],
+            'req_products':[],
+            'warehouseproduct':[]
+        }
+
+        for req_product in validated_data['requirementproduct_set']:
+            ## check to prevent product that need each other in requirement
+                            
+            if validated_data['product'] == req_product['product']:
+                invalid('Error in assembly product')
+            
+            manyProcess = req_product['product'].ppic_process_related.prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product')))
+
+            self.search(validated_data['product'],manyProcess)
+
+        many_req_material = validated_data.pop('requirementmaterial_set')
+        many_req_product = validated_data.pop('requirementproduct_set')
+        order = validated_data['order']
+        product = validated_data['product']
+        len_process = product.ppic_process_related.count()
+        instance_process = Process.objects.create(**validated_data)
+        process_type = instance_process.process_type.id
+        wh_type_subcont = WarehouseType.objects.get(pk=2)
+        wh_type_fg = WarehouseType.objects.get(pk=1)
+
+        product.process = len_process + 1
+        product.save()
+        ## update number of entries process of product
+
+        for req_material in many_req_material:
+            ## insert material requirements
+
+            inserted['req_materials'].append(RequirementMaterial(**req_material,process=instance_process))
+        for req_product in many_req_product:
+            ## insert product assembly requirements
+
+            inserted['req_products'].append(RequirementProduct(**req_product,process=instance_process))
+        
+        wh_type_wip,created = WarehouseType.objects.get_or_create(id=order+2,name=f'Wip{order}')
+        
+        wh_product = {
+            'quantity': 0,
+            'process': instance_process,
+            'product': validated_data['product'],
+            'warehouse_type': wh_type_wip ,
+        }
+
+        if order > len_process and len_process != 0:
+            ## if new process is the last process, change previous process to wip
+            ## and set new process to finished good
+        
+            prev_process = product.ppic_process_related.get(order = (order-1))
+            prev_wh_type = WarehouseType.objects.get(pk=order+1)
+            prev_wh_product = prev_process.warehouseproduct_set.exclude(warehouse_type=2).get()
+            prev_wh_product.warehouse_type = prev_wh_type
+            prev_wh_product.save()
+            wh_product['warehouse_type'] = wh_type_fg
+            
+        
+        elif order > len_process and len_process == 0:
+            ## if new process is the last process, and there is not previous process in wip
+            wh_product['warehouse_type'] = wh_type_fg            
+
+
+        if process_type == 2:
+            inserted['warehouseproduct'].append(WarehouseProduct(**wh_product))
+
+            wh_product['warehouse_type'] = wh_type_subcont
+            inserted['warehouseproduct'].append(WarehouseProduct(**wh_product))
+        else:
+            inserted['warehouseproduct'].append(WarehouseProduct(**wh_product))
+
+        RequirementMaterial.objects.bulk_create(inserted['req_materials'])
+        RequirementProduct.objects.bulk_create(inserted['req_products'])
+        WarehouseProduct.objects.bulk_create(inserted['warehouseproduct'])
+
+        return instance_process
 
     def update(self, instance, validated_data):
         '''
-        update product -> process -> req material & req product & warehouse product
-        '''       
+        update process -> req material & req product & warehouse product
+        '''
         changed_data = {
             'material': {
                 'instance':RequirementMaterial,
@@ -277,250 +454,141 @@ class ProductManagementSerializer(ModelSerializer):
                 'inserted':[],
                 'updated':[]
             },
-            'warehouseproduct': {
-                'instance':WarehouseProduct,
-                'deleted':[],
-                'inserted':[],
-                'updated':[]
-            },
-            'process': {
-                'instance':Process,
-                'deleted':[],
-                'updated':[]
-            }
         }
 
-        wh_type_subcont = WarehouseType.objects.get(id=2)
-        wh_type_fg = WarehouseType.objects.get(id=1)
+        for req_product in validated_data['requirementproduct_set']:
+            ## check to prevent product that need each other in requirement
 
-        many_process = validated_data.pop('ppic_process_related')
-        len_process = len(many_process)
+            if instance.product == req_product['product']:
+                invalid('Error in assembly product')
+            
+            manyProcess = req_product['product'].ppic_process_related.prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product')))
 
-        for process in many_process:
+            self.search(instance.product,manyProcess)
 
-            for req_product in process['requirementproduct_set']:
+        order = validated_data['order']
+        process_type = validated_data['process_type']
+        process_name = validated_data['process_name']
+        ## updated data
 
-                if instance == req_product['product']:
-                    raise ValidationError('Error in assembly product')
-                
-                manyProcess = req_product['product'].ppic_process_related.prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product')))
-
-                self.search(instance,manyProcess)
-
-
-
-        instance_old_process = instance.ppic_process_related.all()
-        len_instance_process = len(instance_old_process)
-        instance.last_update = timezone.now()
-        instance.process = len_process
-        instance.save(update_fields=['last_update','process'])
-
-        super().update(instance, validated_data)
+        instance_order = instance.order
+        instance_process_type = instance.process_type
+        instance_product = instance.product
+        len_process = instance_product.ppic_process_related.count()
+        instance_wh_product = instance.warehouseproduct_set.all()
         
-        order = 1
+        many_req_material = validated_data.pop('requirementmaterial_set')
+        len_req_material = len(many_req_material)
+        many_req_product = validated_data.pop('requirementproduct_set')
+        len_req_product = len(many_req_product)
 
-        for i in range(len_process):
-            
-            req_material = many_process[i].pop('requirementmaterial_set')
-            len_material = len(req_material)
+        wh_type_wip,created = WarehouseType.objects.get_or_create(id=order+2,name=f'Wip{order}')
+        
+        wh_type_subcont = WarehouseType.objects.get(pk=2)
+        wh_type_fg = WarehouseType.objects.get(pk=1)
 
-            req_product = many_process[i].pop('requirementproduct_set')
-            len_product = len(req_product)
+        if instance_process_type != process_type:
+            ## if there is changes in process type
+            instance.process_type = process_type
+
+            if instance_process_type.id == 2 and process_type.id != 2:
+                ## if previous process type is subcont and update to non subcont
+
+                whsubcont = instance_wh_product.get(warehouse_type=2)
+                wh_not_subcont = instance_wh_product.exclude(warehouse_type=2).get()
+                wh_not_subcont.quantity += whsubcont.quantity
+                wh_not_subcont.save()
+                whsubcont.delete()
+
+            elif instance_process_type.id != 2 and process_type.id == 2:
+                ## if previous process type is not subcont and update to subcont
+
+                WarehouseProduct.objects.create(quantity=0,process=instance,product=instance_product,warehouse_type=wh_type_subcont)
+
+        if order != instance_order:
+            ## if there is changes in order
+            instance.order = order ## save new order here
+
+            if order > len_process and instance_order != len_process:
+                ## if order of process is the last process, change previous process to wip
+                prev_process = Process.objects.filter(order = order-1,product=instance_product).prefetch_related(
+                        Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type=1))).get()
+                prev_wh_type = WarehouseType.objects.get(pk=order+1)
+                prev_wh_product = prev_process.warehouseproduct_set.get()
+                prev_wh_product.warehouse_type = prev_wh_type
+                prev_wh_product.save()
+                
+                ## and set warehouse product of this process to finished good
+                current_wh_product = instance_wh_product.get(warehouse_type__gt=2)
+                current_wh_product.warehouse_type = wh_type_fg
+                current_wh_product.save()
             
-            if i > len_instance_process - 1:
-                instance_process = Process.objects.create(**many_process[i],product=instance,order=order)
-                new_process_type = instance_process.process_type.id
+            elif order < len_process and instance_order > len_process:
+                prev_instance_process = Process.objects.filter(order = instance_order-1,product=instance_product).prefetch_related(
+                        Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+                prev_wh_product = prev_instance_process.warehouseproduct_set.get()
+                prev_wh_product.warehouse_type = wh_type_fg
+                prev_wh_product.save()
+
+                current_wh_product = instance_wh_product.get(warehouse_type=1) ## fg
+                current_wh_product.warehouse_type = wh_type_wip
+                current_wh_product.save()
+
+            elif order == len_process and instance_order > len_process or order > len_process and instance_order == len_process :
+                ## changes of order that doens't impact to warehouse product type
+                pass
+
             else:
-                instance_process = instance_old_process[i]
-                old_process_type = instance_process.process_type.id
+                current_wh_product = instance_wh_product.get(warehouse_type__gt=2) ## fg
+                current_wh_product.warehouse_type = wh_type_wip
+                current_wh_product.save()
 
-                instance_process.process_name = many_process[i]['process_name']
-                instance_process.order = order
-                instance_process.process_type = many_process[i]['process_type']
-                # instance_process.save()
-                changed_data['process']['updated'].append(instance_process)
-                
-                new_process_type = many_process[i]['process_type'].id
+        instance.process_name = process_name
+        instance.save()
 
-            instance_req_material = instance_process.requirementmaterial_set.all()
-            len_instance_req_material = len(instance_req_material) - 1
+        
+        instance_req_material = instance.requirementmaterial_set.all()
+        len_instance_req_material = len(instance_req_material) - 1
 
-            instance_req_product = instance_process.requirementproduct_set.all()
-            len_instance_req_product = len(instance_req_product) - 1
-            
-            k = 0
-            for k in range(len_material):
-                if k > len_instance_req_material:
-                    changed_data['material']['inserted'].append(RequirementMaterial(**req_material[k],process=instance_process))
-                else:
-                    instance_req_material[k].input = req_material[k].get('input',instance_req_material[k].input)
-                    instance_req_material[k].output = req_material[k].get('output',instance_req_material[k].output)
-                    instance_req_material[k].material = req_material[k]['material']
-                    instance_req_material[k].process = instance_process                    
-                    changed_data['material']['updated'].append(instance_req_material[k])
+        instance_req_product = instance.requirementproduct_set.all()
+        len_instance_req_product = len(instance_req_product) - 1
+        
+        m = 0
+        for k in range(len_req_material):
+            if k > len_instance_req_material:
+                changed_data['material']['inserted'].append(RequirementMaterial(**many_req_material[k],process=instance))
+            else:
+                instance_req_material[k].input = many_req_material[k].get('input',instance_req_material[k].input)
+                instance_req_material[k].output = many_req_material[k].get('output',instance_req_material[k].output)
+                instance_req_material[k].material = many_req_material[k]['material']
+                instance_req_material[k].process = instance                    
+                changed_data['material']['updated'].append(instance_req_material[k])
+            m += 1
 
-            changed_data['material']['deleted'] = changed_data['material']['deleted'][:] + instance_req_material[k+1:]
-            
-            j = 0
-            for j in range(len_product):
-                if j > len_instance_req_product:
-                    changed_data['product']['inserted'].append(RequirementProduct(**req_product[j],process=instance_process))
-                else:
-                    instance_req_product[j].input = req_product[j].get('input',instance_req_product[j].input)
-                    instance_req_product[j].output = req_product[j].get('output',instance_req_product[j].output)
-                    instance_req_product[j].product = req_product[j]['product']
-                    instance_req_product[j].process = instance_process                    
-                    changed_data['product']['updated'].append(instance_req_product[j])
+        changed_data['material']['deleted'] = changed_data['material']['deleted'][:] + instance_req_material[m:]
+        
+        p = 0
+        for j in range(len_req_product):
+            if j > len_instance_req_product:
+                changed_data['product']['inserted'].append(RequirementProduct(**many_req_product[j],process=instance))
+            else:
+                instance_req_product[j].input = many_req_product[j].get('input',instance_req_product[j].input)
+                instance_req_product[j].output = many_req_product[j].get('output',instance_req_product[j].output)
+                instance_req_product[j].product = many_req_product[j]['product']
+                instance_req_product[j].process = instance                    
+                changed_data['product']['updated'].append(instance_req_product[j])
+            p += 1
 
-            changed_data['product']['deleted'] = changed_data['product']['deleted'][:] + instance_req_product[j+1:]
-
-            wh_product = {
-                'quantity':0,
-                'process':instance_process,
-                'product':instance,
-            }
-
-            wh_type_wip,created = WarehouseType.objects.get_or_create(id=order+2,name=f'Wip{order}')
-
-
-            if i > len_instance_process - 1: # kalo prosesnya yang LAMA dah abis berarti insert
-                if new_process_type == 2: # kalo proses itu SUBCONT
-                        wh_product['warehouse_type'] = wh_type_subcont
-                        changed_data['warehouseproduct']['inserted'].append(WarehouseProduct(**wh_product))
-                
-                if i == len_process - 1: # kalo proses barunya proses TERAKHIR
-                    wh_product['warehouse_type'] = wh_type_fg
-                    changed_data['warehouseproduct']['inserted'].append(WarehouseProduct(**wh_product))
-                else: # kalo proses barunya bukan yang TERAKHIR
-                    wh_product['warehouse_type'] = wh_type_wip
-                    changed_data['warehouseproduct']['inserted'].append(WarehouseProduct(**wh_product))
-            
-            else: # asumsikan proses lama nya masih ada berarti update
-                if i == len_process - 1: # proses barunya yang TERAKHIR
-                    if i == len_instance_process - 1: # proses lama juga TERAKHIR
-                        fg = instance_process.warehouseproduct_set.get(warehouse_type=1)
-                        
-                        if old_process_type == 2 and new_process_type != 2: # kalo proses lamanya itu subcont
-                            subcont = instance_process.warehouseproduct_set.get(warehouse_type=2)
-                            fg.quantity += subcont.quantity
-                            changed_data['warehouseproduct']['deleted'].append(subcont)
-
-                        elif old_process_type !=2 and new_process_type == 2:
-                            wh_product['warehouse_type'] = wh_type_subcont
-                            changed_data['warehouseproduct']['inserted'].append(WarehouseProduct(**wh_product))
-                            
-                        changed_data['warehouseproduct']['updated'].append(fg)
-
-                    else: # proses lamanya BUKAN yang TERAKHIR
-                        wip = instance_process.warehouseproduct_set.get(warehouse_type=order+2)
-                        wip.warehouse_type = wh_type_fg
-                        
-                        if old_process_type == 2 and new_process_type != 2: # kalo proses lamanya itu subcont
-                            subcont = instance_process.warehouseproduct_set.get(warehouse_type=2)
-                            wip.quantity += subcont.quantity
-                            changed_data['warehouseproduct']['deleted'].append(subcont)
-
-                        elif old_process_type !=2 and new_process_type == 2:
-                            wh_product['warehouse_type'] = wh_type_subcont
-                            changed_data['warehouseproduct']['inserted'].append(WarehouseProduct(**wh_product))
-                        
-                        changed_data['warehouseproduct']['updated'].append(wip)
-                
-                else: # kalo proses baru BUKAN prosesnya yang TERAKHIR
-                    if i == len_instance_process - 1: # prosesnya yang lama TERAKHIR
-                        fg = instance_process.warehouseproduct_set.get(warehouse_type=1)
-                        fg.warehouse_type = wh_type_wip
-
-                        if old_process_type == 2 and new_process_type != 2: # kalo proses lamanya itu subcont
-                            subcont = instance_process.warehouseproduct_set.get(warehouse_type=2)
-                            fg.quantity += subcont.quantity
-                            changed_data['warehouseproduct']['deleted'].append(subcont)    
-                            
-                        elif old_process_type !=2 and new_process_type == 2:
-                            wh_product['warehouse_type'] = wh_type_subcont
-                            changed_data['warehouseproduct']['inserted'].append(WarehouseProduct(**wh_product))
-                            
-                        changed_data['warehouseproduct']['updated'].append(fg)
-
-                    else: #proses lama juga BUKAN yang TERAKHIR
-                        
-                        wip = instance_process.warehouseproduct_set.get(warehouse_type=order+2)
-
-                        if old_process_type == 2 and new_process_type != 2: # kalo proses lamanya itu subcont
-                            subcont = instance_process.warehouseproduct_set.get(warehouse_type=2)
-                            wip.quantity += subcont.quantity
-                            changed_data['warehouseproduct']['deleted'].append(subcont)
-
-                        elif old_process_type !=2 and new_process_type == 2:
-                            wh_product['warehouse_type'] = wh_type_subcont
-                            changed_data['warehouseproduct']['inserted'].append(WarehouseProduct(**wh_product))
-                            
-                        changed_data['warehouseproduct']['updated'].append(wip)
-
-            order += 1
-
-        changed_data['process']['deleted'] = changed_data['process']['deleted'][:] + instance_old_process[i+1:]
-
-
+        changed_data['product']['deleted'] = changed_data['product']['deleted'][:] + instance_req_product[p:]
+        
         self.perform_changing(changed_data)
-
+        
         return instance
 
-    def create(self, validated_data):
-        '''
-        create product -> process -> requirement material & requirement product & warehouse product
-        '''
-        many_process = validated_data.pop('ppic_process_related')
-        len_process = len(many_process)
-
-        req_material_bulk = []
-        req_product_bulk = []
-        whproduct_bulk = []
-        order = 1
-
-        instance_product = Product.objects.create(**validated_data,process=len_process)
-        wh_type_subcont = WarehouseType.objects.get(id=2)
-
-        for each_process in many_process:
-            many_req_material = each_process.pop('requirementmaterial_set')
-            many_req_product = each_process.pop('requirementproduct_set')
-            instance_process = Process.objects.create(**each_process,product=instance_product,order=order)
-            process_type = instance_process.process_type.name
-
-            for req_material in many_req_material:
-                req_material_bulk.append(RequirementMaterial(**req_material,process=instance_process))
-            for req_product in many_req_product:
-                req_product_bulk.append(RequirementProduct(**req_product,process=instance_process))
-            
-            wh_wip_type,created = WarehouseType.objects.get_or_create(id=order+2,name=f'Wip{order}')
-            
-            wh_product = {
-                'quantity':0,
-                'process':instance_process,
-                'product':instance_product,
-                'warehouse_type':wh_wip_type,
-            }
-
-            if process_type == 'subcont' or process_type == 'Subcont':
-                whproduct_bulk.append(WarehouseProduct(**wh_product))
-
-                wh_product['warehouse_type'] = wh_type_subcont
-                whproduct_bulk.append(WarehouseProduct(**wh_product))
-            else:
-                whproduct_bulk.append(WarehouseProduct(**wh_product))
-
-            order += 1
-
-        RequirementMaterial.objects.bulk_create(req_material_bulk)
-        RequirementProduct.objects.bulk_create(req_product_bulk)
-        WarehouseProduct.objects.bulk_create(whproduct_bulk)
-
-        return instance_product
 
     class Meta:
-        model = Product
-        exclude = ['process']
-
+        model = Process
+        fields= '__all__'
 
 
 ### Product management seriz
@@ -998,6 +1066,7 @@ class DeliveryNoteCustomerManagementSerializer(ModelSerializer):
         model = DeliveryNoteCustomer
         fields = '__all__'
 
+
 class ProductDeliverCustomerManagementSerializer(ModelSerializer):
     '''
     seriz for management product delivery
@@ -1073,18 +1142,202 @@ class ProductDeliverCustomerManagementSerializer(ModelSerializer):
         model = ProductDeliverCustomer
         fields = '__all__'
 
+class DeliveryNoteSubcontManagementSerializer(ModelSerializer):
+    '''
+    seriz for management delivery note product SUBCONSTRUCTION
+    '''
+    class Meta:
+        model = DeliveryNoteSubcont
+        fields= '__all__'
+
+class ProductDeliverySubcontManagementSerializer(ModelSerializer):
+    '''
+    seriz for management delivery product subcont
+    '''
+
+    def suffciency_req_material_check(self,req_materials,production_quantity:int):
+        
+        for req_material in req_materials:
+            wh_material = req_material.material.warehousematerial
+            stock_in_wh = wh_material.quantity
+            used_material = ceil((production_quantity / req_material.output) * req_material.input)
+            if used_material > stock_in_wh:
+                raise ValidationError(f'Jumlah stok {req_material.material.name} tidak cukup')
+ 
+
+    def sufficiency_req_product_check(self,req_products,production_quantity:int):
+        
+        for req_product in req_products:
+            product = req_product.product
+            wh_product = product.ppic_warehouseproduct_related.first()
+            stock_in_whproduct = wh_product.quantity
+            used_product = (production_quantity/req_product.output) * req_product.input
+            if used_product > stock_in_whproduct:
+                raise ValidationError(f'Jumlah stok produk {product.name} tidak cukup')
+
+    def validate(self, attrs):
+
+        product = attrs['product']
+        process = attrs['process']
+        order = process.order
+        quantity_delivery = attrs['quantity']
+
+        if order > 1:
+            prev_process = Process.objects.get(order = order-1, product = product)
+            warehouse_wip = prev_process.warehouseproduct_set.filter(warehouse_type__gt = 2).first()
+            
+            if quantity_delivery > warehouse_wip.quantity:
+                raise ValidationError(f'Quantity stok of {product.name} is not enough to make this delivery')
+
+        if process not in product.ppic_process_related.all():
+            raise ValidationError(f'Proses tersebut bukan bagian dari work in process product {product.name}')
+
+        req_product = process.requirementproduct_set.select_related('product').prefetch_related(
+            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+        
+        req_material = process.requirementmaterial_set.select_related('material__warehousematerial')
+        
+
+        self.suffciency_req_material_check(req_material,quantity_delivery)
+        self.sufficiency_req_product_check(req_product,quantity_delivery)
+
+        return super().validate(attrs)
+    
+    def create(self, validated_data):
+
+        product = validated_data['product']
+        process = validated_data['process']
+        quantity_delivery = validated_data['quantity']
+        order = process.order
+        
+        inserted = {
+            'req_material_subcont':[],
+            'req_product_subcont':[]
+        }
+
+        updated = {
+            'wh_material':[],
+            'wh_product':[]
+        }
+
+        productDeliverSubcont = super().create(validated_data)
+
+        if order > 1:
+
+            prev_process = Process.objects.filter(order = order-1,product=product).prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+
+            warehouse_wip = prev_process.warehouseproduct_set.first()
+            warehouse_wip.quantity -= (quantity_delivery)
+            warehouse_wip.save()
+         
+        warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type = 2).first()
+        warehouse_subcont.quantity += (quantity_delivery)
+        warehouse_subcont.save()
+        
+        req_materials = process.requirementmaterial_set.select_related('material__warehousematerial')
+        req_products = process.requirementproduct_set.select_related('product').prefetch_related(
+            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+
+        for req_material in req_materials:
+            material = req_material.material
+            wh_material = material.warehousematerial
+            used_material = (quantity_delivery / req_material.output) * req_material.input
+            rest_material = ceil(used_material) - used_material
+            
+            if rest_material > 0:
+
+                obj,created = WarehouseScrapMaterial.objects.get_or_create(material=material)
+                obj.quantity += rest_material
+                obj.save()
+
+            wh_material.quantity -= ceil(used_material)
+            updated['wh_material'].append(wh_material)
+            inserted['req_material_subcont'].append(RequirementMaterialSubcont(quantity=used_material,material=material,product_subcont=productDeliverSubcont))
+
+        for req_product in req_products:
+            product = req_product.product
+            wh_product = product.ppic_warehouseproduct_related.first()
+            used_product = ceil((quantity_delivery / req_product.output) * req_product.input)
+
+            wh_product.quantity -= used_product
+
+            updated['wh_product'].append(wh_product)
+            inserted['req_product_subcont'].append(RequirementProductsubcont(quantity=used_product,product=product,product_subcont=productDeliverSubcont))
+
+        updated['wh_product'].append(warehouse_subcont)
+
+        WarehouseProduct.objects.bulk_update(updated['wh_product'],['quantity'])
+        WarehouseMaterial.objects.bulk_update(updated['wh_material'],['quantity'])
+
+        RequirementMaterialSubcont.objects.bulk_create(inserted['req_material_subcont'])
+        RequirementProductsubcont.objects.bulk_create(inserted['req_product_subcont'])
+
+        return productDeliverSubcont
+
+    
+    def requirement_check(self,instance):
+        
+        '''
+        check the product if its production report can be change or not, 
+        including check this process requirement material as well as requirement product
+        '''
+
+        process = instance.process
+
+        material_reports = instance.requirementmaterialsubcont_set.select_related('material')
+        product_reports = instance.requirementproductsubcont_set.select_related('product')
+
+        req_materials = process.requirementmaterial_set.select_related('material__warehousematerial')
+        req_products = process.requirementproduct_set.select_related('product').prefetch_related(
+            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+        
+        req_mats = [x.material for x in req_materials]
+        req_prod = [x.product for x in req_products]
+
+
+        for report in material_reports:
+            try:
+                req_mats.remove(report.material)
+            except:
+                self.invalid_requirement()
+
+        for report in product_reports:
+            try:
+                req_prod.remove(report.product)
+            except:
+                self.invalid_requirement()
+
+        if len(req_mats) > 0:
+            self.invalid_requirement()
+        if len(req_prod) > 0:
+            self.invalid_requirement()
+
+        return req_materials,req_products,material_reports,product_reports
+
+    
+    def invalid_requirement(self):
+
+        return invalid('Cannot change delivery product subcont, because material requirements or product requirements in this subcont process have changed')
+
+    def update(self, instance, validated_data):
+        return super().update(instance, validated_data)
+
+    class Meta:
+        model = ProductDeliverSubcont
+        fields = '__all__'
 
 class MaterialProductionReportReadOnlySerializer(ModelSerializer):
     class Meta:
         model = MaterialProductionReport
         exclude = ['production_report']
-        depth = 1
+        depth = 2
 
 class ProductProductionReportReadOnlySerializer(ModelSerializer):
     class Meta:
         model = ProductProductionReport
         exclude = ['production_report']
-        depth = 1
+        depth = 2
 
 class ProductionReportReadOnlySerializer(ModelSerializer):
     productproductionreport_set = ProductProductionReportReadOnlySerializer(many=True)
@@ -1124,24 +1377,21 @@ class ProductionReportManagementSerializer(ModelSerializer):
 
         product = attrs['product']
         process = attrs['process']
-        process_type = process.process_type
         order = process.order
         quantity_production = attrs['quantity'] + attrs['quantity_not_good']
 
-        if order > 1 and process_type.id !=2:
-            prev_process = Process.objects.get(order = order-1, product = product)
-            warehouse_wip = prev_process.warehouseproduct_set.filter(warehouse_type__gt = 2).first()
-            
-            if quantity_production > warehouse_wip.quantity:
-                raise ValidationError(f'Jumlah stok wip {product.name} kurang')
-
-        if process_type.id == 2:
-            warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type =2).first()
-            if quantity_production > warehouse_subcont.quantity:
-                raise ValidationError(f'Jumlah produksi yang anda input berlebih')
+        if order > 1:
+            try:
+                prev_process = Process.objects.get(order = order-1, product = product)
+                warehouse_wip = prev_process.warehouseproduct_set.filter(warehouse_type__gt = 2).first()
+                
+                if quantity_production > warehouse_wip.quantity:
+                    raise ValidationError(f'Quantity stok wip{product.name} is not enough for make production')
+            except:
+                invalid(f"Process wip{order-1} doesn't exists ")
 
         if process not in product.ppic_process_related.all():
-            raise ValidationError(f'Proses tersebut bukan bagian dari work in process product {product.name}')
+            raise ValidationError(f'Invalid process')
 
         req_product = process.requirementproduct_set.select_related('product').prefetch_related(
             Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
@@ -1172,7 +1422,6 @@ class ProductionReportManagementSerializer(ModelSerializer):
 
         product = validated_data['product']
         process = validated_data['process']
-        process_type = process.process_type
         quantity_production = validated_data['quantity'] + validated_data['quantity_not_good']
         order = process.order
         
@@ -1188,20 +1437,16 @@ class ProductionReportManagementSerializer(ModelSerializer):
 
         production_report = super().create(validated_data)
 
-        if order > 1 and process_type.id !=2:
+        if order > 1:
+            try:
+                prev_process = Process.objects.filter(order = order-1,product=product).prefetch_related(
+                    Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+                warehouse_wip = prev_process.warehouseproduct_set.first()
+                warehouse_wip.quantity -= (quantity_production)
+                warehouse_wip.save()
+            except:
+                invalid(f"Process wip{order-1} doesn't exists")
 
-            prev_process = Process.objects.filter(order = order-1,product=product).prefetch_related(
-                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
-
-            warehouse_wip = prev_process.warehouseproduct_set.first()
-            warehouse_wip.quantity -= (quantity_production)
-            warehouse_wip.save()
-        
-        if process_type.id == 2:
-            warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type = 2).first()
-            warehouse_subcont.quantity -= (quantity_production)
-            warehouse_subcont.save()
-        
         req_materials = process.requirementmaterial_set.select_related('material__warehousematerial')
         req_products = process.requirementproduct_set.select_related('product').prefetch_related(
             Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
@@ -1247,12 +1492,12 @@ class ProductionReportManagementSerializer(ModelSerializer):
     
     def invalid_requirement(self):
 
-        return invalid('Tidak bisa mengubah laporan produksi')
+        return invalid('Cannot change production report, because material requirements or product requirements in this process have changed')
 
     def requirement_check(self,instance):
         
         '''
-        check the product if its production report can be changed
+        check the product if its production report can be change or not, 
         including check this process requirement material as well as requirement product
         '''
 
@@ -1291,19 +1536,14 @@ class ProductionReportManagementSerializer(ModelSerializer):
     def update(self, instance, validated_data):
         
         '''
-        update production report and quantity that used for requirement product and requirement material also changed
+        update production report, and quantity that used for requirement product and requirement material also changed
         '''
 
         prev_quantity_production = instance.quantity + instance.quantity_not_good
         quantity_production = validated_data['quantity'] + validated_data['quantity_not_good']
-        
         instance_product = instance.product
         process = instance.process
-
         req_materials,req_products,material_reports,product_reports = self.requirement_check(instance)
-
-        process_type = process.process_type
-        
         order = process.order
 
         updated = {
@@ -1314,22 +1554,22 @@ class ProductionReportManagementSerializer(ModelSerializer):
         }
 
         production_report = super().update(instance, validated_data)
+        production_report.last_update = timezone.now()
+        production_report.save(update_fields=['last_update'])
 
-        if order > 1 and process_type.id !=2:
-            prev_process = Process.objects.filter(order = order-1,product=instance_product).prefetch_related(
-                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
 
-            warehouse_wip = prev_process.warehouseproduct_set.first()
-            warehouse_wip.quantity += (prev_quantity_production)
-            warehouse_wip.quantity -= (quantity_production)
-            warehouse_wip.save()
-        
-        if process_type.id == 2:
-            warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type = 2).first()
-            warehouse_subcont.quantity += (prev_quantity_production)
-            warehouse_subcont.quantity -= (quantity_production)    
-            warehouse_subcont.save()
-        
+        if order > 1:
+            try:
+                prev_process = Process.objects.filter(order = order-1,product=instance_product).prefetch_related(
+                    Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+
+                warehouse_wip = prev_process.warehouseproduct_set.first()
+                warehouse_wip.quantity += (prev_quantity_production)
+                warehouse_wip.quantity -= (quantity_production)
+                warehouse_wip.save()
+            except:
+                invalid(f"Process wip${order-1} doesn't exists ")
+
         for req_material in req_materials:
             material = req_material.material
             wh_material = material.warehousematerial
@@ -1406,6 +1646,7 @@ class ProductionReportManagementSerializer(ModelSerializer):
     class Meta:
         model = ProductionReport
         fields = '__all__'
+        read_only_fields = ['last_update','created']
 
 
 

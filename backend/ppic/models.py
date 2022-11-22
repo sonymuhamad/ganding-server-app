@@ -258,7 +258,7 @@ class DetailMrp(AbstractQuantity,AbstractProduct):
     '''
 
     mrp = models.ForeignKey(MaterialRequirementPlanning,on_delete=models.CASCADE)
-    quantity_production = models.PositiveIntegerField() #quantity product that want to be producted
+    quantity_production = models.PositiveIntegerField(default=0) #quantity product that want to be producted
     
     class Meta(AbstractQuantity.Meta,AbstractProduct.Meta):
         pass

@@ -1,6 +1,4 @@
-from dataclasses import field
 from rest_framework.serializers import ModelSerializer,StringRelatedField
-from .models import UserActivity,Activity
 from oauth2_provider.models import AccessToken
 from django.contrib.auth.models import User,Group
 
@@ -10,11 +8,6 @@ from marketing.models import SalesOrder,Customer
 
 from purchasing.models import Supplier,PurchaseOrderMaterial
 
-
-class ActivitySerializer(ModelSerializer):
-    class Meta:
-        model = Activity
-        fields = ['name']
 
 class GroupSerializer(ModelSerializer):
     class Meta:
@@ -40,14 +33,6 @@ class UserSerializer(ModelSerializer):
     class Meta:
         model = User
         fields = ['last_login','username','email','oauth2_provider_accesstoken','groups']
-
-class UserActivitySerializer(ModelSerializer):
-    user = UserManagementSerializer()
-    activity = StringRelatedField()
-    class Meta:
-        model = UserActivity
-        fields = ['user','activity','descriptions']
-        # dive 2 relation trough useractivity
 
 '''
 serializer for material requirement planning

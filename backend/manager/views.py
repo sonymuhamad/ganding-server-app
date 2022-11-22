@@ -14,9 +14,8 @@ from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateMode
 from marketing.models import Customer, SalesOrder
 from purchasing.models import Supplier,PurchaseOrderMaterial
 
-from .serializer import UserActivitySerializer, UserSerializer,UserManagementSerializer,ReportMrpSerializer,SupplierSerializer,CustomerSalesOrderSerializer,CustomerDeliveryNoteSerializer
+from .serializer import  UserSerializer,UserManagementSerializer,ReportMrpSerializer,SupplierSerializer,CustomerSalesOrderSerializer,CustomerDeliveryNoteSerializer
 from .forms import RegisterForm
-from .models import UserActivity
 
 from ppic.models import DeliveryNoteCustomer, DetailMrp, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,MaterialOrder, WarehouseProduct,Process
 
@@ -144,12 +143,6 @@ class UserViewSet(ModelViewSet):
             respons = form.save()
             return response.Response(respons,status=status.HTTP_201_CREATED)
         return response.Response({'error':form.errors},status=status.HTTP_400_BAD_REQUEST)
-
-class UserActivityViewSet(ModelViewSet):
-    serializer_class = UserActivitySerializer
-    permission_classes = [permissions.AllowAny]
-    queryset = UserActivity.objects.select_related('user','activity').prefetch_related('user__groups')
-
 
 class ReportMrpViewSet(ModelViewSet):
     '''

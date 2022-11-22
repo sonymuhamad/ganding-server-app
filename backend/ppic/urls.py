@@ -10,12 +10,15 @@ router = DefaultRouter()
 router.register(r'uom-management',UomManagementViewSet,basename='uom-management')
 router.register(r'machine',MachineViewSet,basename='machine')
 router.register(r'operator',OperatorViewSet,basename='operator')
+router.register(r'vehicle',VehicleViewSet,basename='vehicle')
+router.register(r'driver',DriverViewSet,basename='driver')
 
 router.register(r'product-type',ProductTypeViewSet,basename='product-type')
 router.register(r'process-type',ProcessTypeViewSet,basename='process-type')
 router.register(r'customer-lists',CustomerListViewSet,basename='customer-lists')
 router.register(r'product-lists',ProductListViewSet,basename='product-lists')
 router.register(r'material-lists',MaterialListViewSet,basename='material-lists')
+router.register(r'supplier-list',SupplierListViewSet,basename='supplier-list')
 
 router.register(r'product-list',ProductListReadOnlyViewSet,basename='product-list')
 router.register(r'product-detail',ProductDetailReadOnlyViewSet,basename='product-detail')
@@ -28,7 +31,6 @@ router.register(r'supplier-material-list',MaterialSupplierReadOnlyViewSet,basena
 router.register(r'material',MaterialViewSet,basename='material')
 router.register(r'material-detail',MaterialDetailViewSet,basename='material-detail')
 router.register(r'uom-list',UomListViewSet,basename='uom-list')
-router.register(r'supplier-list',SupplierListViewSet,basename='supplier-list')
 
 
 router.register(r'uom-conversion-detail',UomConversionReadOnlyViewSet,basename='uom-conversion-detail')
@@ -56,17 +58,32 @@ router.register(r'deliverynote-material',DeliveryNoteMaterialReadOnlyViewSet,bas
 router.register(r'deliverynote-material-management',DeliveryNoteMaterialManagementViewSet,basename='deliverynote-material-management')
 router.register(r'material-receipt-management',MaterialReceiptManagementViewSet,basename='material-receipt-management')
 
-router.register(r'deliverynote-customer',DeliveryNoteCustomerReadOnlyViewSet,basename='deliverynote-customer')
-router.register(r'deliverynote-customer-management',DeliveryNoteCustomerManagementViewSet,basename='deliverynote-customer-management')
+router.register(r'customer-product-order-list',CustomerProductOrderListViewSet,basename='customer-product-order-list')
+router.register(r'product-order-list',ProductOrderListViewSet,basename='product-order-list')
+router.register(r'delivery-schedule',DeliveryScheduleListViewSet,basename='delivery-schedule')
+router.register(r'delivery-note',DeliveryNoteCustomerReadOnlyViewSet,basename='delivery-note-customer')
+router.register(r'delivery-note-management',DeliveryNoteCustomerManagementViewSet,basename='delivery-note-customer-management')
 router.register(r'product-delivery',ProductDeliverManagementViewSet,basename='product-deliver-management')
 
-router.register(r'delivery-note-subcont',DeliveryNoteSubcontManagementViewSet,basename='delivery-note-subcont')
-router.register(r'product-delivery-subcont',ProductDeliverySubcontManagementViewSet,basename='product-delivery-subcont')
+router.register(r'delivery-note-subcont',DeliveryNoteSubcontReadOnlyViewSet,basename='delivery-note-subcont-read-only')
+router.register(r'delivery-note-subcont-management',DeliveryNoteSubcontManagementViewSet,basename='delivery-note-subcont-management')
+router.register(r'product-delivery-subcont-management',ProductDeliverySubcontManagementViewSet,basename='product-delivery-subcont')
+router.register(r'product-delivery-subcont',ProductDeliverSubcontReadOnlyViewSet,basename='product-subcont')
+router.register(r'receipt-subcont-schedule-management',ReceiptSubcontScheduleManagementViewSet,basename='receipt-subcont-schedule-management')
+router.register(r'production-subcont-list',ProductListSubcontReadOnlyViewSet,basename='production-subcont-list')
+
+
+router.register(r'receipt-note-subcont-management',ReceiptNoteSubcontManagementViewSet,basename='receipt-note-subcont-management')
+router.register(r'receipt-note-subcont',ReceiptNoteSubcontReadOnlyViewSet,basename='receipt-note-subcont')
+router.register(r'product-subcont-receipt-management',SubcontReceiptManagementViewSet,basename='product-subcont-receipt')
+router.register(r'receipt-subcont-schedule-list',ReceiptSubcontScheduleListViewSet,basename='receipt-subcont-schedule-list')
+router.register(r'product-subcont-list',ProductDeliverSubcontListViewSet,basename='product-subcont-list')
+
 
 router.register(r'production-report',ProductionReportReadOnlyViewSet,basename='production-report')
 router.register(r'production-report-management',ProductionReportManagementViewSet,basename='production-report-management')
 router.register(r'production-priority',ProductionPriorityViewSet,basename='production-priority')
-router.register(r'production-list',CustomerProductionListReadOnlyViewSet,basename='production-list')
+router.register(r'production-list',ProductionListViewSet,basename='production-list')
 
 urlpatterns = [
     path('',include(router.urls)),  

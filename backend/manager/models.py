@@ -1,4 +1,3 @@
-from email.policy import default
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
@@ -62,15 +61,4 @@ class AbstractType(models.Model):
 
     class Meta:
         abstract = True
-
-
-class Activity(AbstractType):
-    pass
-
-
-class UserActivity(AbstractCreated):
-    user = models.ForeignKey(User,on_delete=models.CASCADE)
-    activity = models.ForeignKey(Activity,on_delete=models.CASCADE)
-    descriptions = models.TextField()
-
     

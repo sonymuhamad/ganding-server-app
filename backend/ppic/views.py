@@ -1,9 +1,7 @@
 from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet,UpdateModelViewSet,CreateModelViewSet,GetModelViewSet,CreateUpdateModelViewSet
 
-from rest_framework.permissions import AllowAny
 from rest_framework.serializers import ValidationError
 from rest_framework.response import Response
-from rest_framework.parsers import JSONParser,MultiPartParser,FormParser
 from rest_framework.decorators import api_view
 from rest_framework import status
 
@@ -14,7 +12,6 @@ from django.db import connection, reset_queries
 from django.db.models import Prefetch,Q,Sum,F,Count
 from django.shortcuts import get_object_or_404
 
-import json
 
 from manager.shortcuts import invalid
 from ppic.models import *
@@ -62,17 +59,17 @@ class ProductListReadOnlyViewSet(ReadOnlyModelViewSet):
                 Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type'))).select_related('type')))
 
 
-class CustomerProductionListReadOnlyViewSet(ReadOnlyModelViewSet):
-    serializer_class = ProductCustomerReadOnlySerializer
-    queryset = Customer.objects.prefetch_related(
-        Prefetch('ppic_product_related',queryset=Product.objects.prefetch_related(
+class ProductionListViewSet(ReadOnlyModelViewSet):
+    serializer_class = ProductReadOnlySerializer
+    queryset = Product.objects.prefetch_related(
             Prefetch('ppic_process_related',queryset=Process.objects.
             prefetch_related(
                 Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type'))).
             prefetch_related(
-                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
+                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product','product__customer','product__type').prefetch_related(
+                    Prefetch('product__ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type').filter(warehouse_type=1))))).
             prefetch_related(
-                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type').exclude(process_type=2) )).select_related('type')))
+                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','material__uom','material__supplier','material__warehousematerial'))).select_related('process_type').exclude(process_type=2))).select_related('type','customer')
 
 class ProductDetailReadOnlyViewSet(ReadOnlyModelViewSet):
     serializer_class = ProductDetailSerializer
@@ -140,7 +137,7 @@ class MaterialListViewSet(ReadOnlyModelViewSet):
     a viewset for handling request for list of materials
     '''
     serializer_class = MaterialListSerializer
-    queryset = Material.objects.all()
+    queryset = Material.objects.prefetch_related(Prefetch('ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product'))).select_related('warehousematerial','uom','supplier')
 
 
 class CustomerListViewSet(ReadOnlyModelViewSet):
@@ -292,19 +289,6 @@ class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
     serializer_class = MrpReadOnlySerializer
     queryset = MaterialRequirementPlanning.objects.prefetch_related(
         Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product'))).select_related('material','material__supplier','material__uom')
-
-
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-class MrpManagementViewSet(ModelViewSet):
-    '''
-    list : for mrp recommendations
-    create , update , delete : mrp -> detail mrp
-    '''
-    serializer_class = MrpManagementSerializer
-    queryset = MaterialRequirementPlanning.objects.all()
-    data = {}
 
     @queryDebug
     def list(self, request, *args, **kwargs):
@@ -502,8 +486,16 @@ class MrpManagementViewSet(ModelViewSet):
                             for k,v in value["detail"].items()]
                     }
             recommend_seriz.append(each_seriz)
+
         
+        querysetMrp = MaterialRequirementPlanning.objects.prefetch_related(
+            Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product'))).select_related('material','material__supplier','material__uom','material__warehousematerial')
         
+        for mrp in querysetMrp:
+            recommend_seriz.append(mrp)
+        
+        ## requirements material in table are merged with requirements material which calculated with all product ordered
+
         mrp_seriz = MrpReadOnlySerializer(recommend_seriz,many=True)
 
         return  Response(mrp_seriz.data)
@@ -548,9 +540,6 @@ class MrpManagementViewSet(ModelViewSet):
                 else:
                     data[req_material['material']['id']] = req_material['material']
                     data[req_material['material']['id']]['quantity'] = qty_req_material
-                
-                if idProduct ==8:
-                    print(qty_req_material)
 
                 if 'detail' in data[req_material['material']['id']]:
                     
@@ -567,6 +556,15 @@ class MrpManagementViewSet(ModelViewSet):
                             'quantity_production':quantity,
                             'quantity':qty_req_material
                             } }
+
+class MrpManagementViewSet(ModelViewSet):
+    '''
+    list : for mrp recommendations
+    create , update , delete : mrp -> detail mrp
+    '''
+    serializer_class = MrpManagementSerializer
+    queryset = MaterialRequirementPlanning.objects.prefetch_related(Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('mrp','product'))).select_related('material')
+    
         
 
 class WarehouseFinishGoodViewSet(GetModelViewSet):
@@ -699,7 +697,7 @@ class MaterialReceiptScheduleReadOnlyViewSet(ReadOnlyModelViewSet):
     a read only view set for schedule material receipt
     '''
     serializer_class = MaterialReceiptScheduleReadOnlySerializer
-    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__supplier','material_order__purchase_order_material__supplier').filter(Q(fulfilled_quantity__lte=0)&Q(material_order__done=False)).order_by('date')
+    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier').filter(Q(fulfilled_quantity__lte=0)&Q(material_order__done=False)).order_by('date')
 
 class DeliveryNoteMaterialReadOnlyViewSet(ReadOnlyModelViewSet):
     serializer_class = DeliveryNoteMaterialReadOnlySerializer
@@ -710,7 +708,7 @@ class DeliveryNoteMaterialReadOnlyViewSet(ReadOnlyModelViewSet):
 
 class DeliveryNoteMaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
     serializer_class = DeliveryNoteMaterialManagementSerializer
-    queryset = DeliveryNoteMaterial.objects.all()
+    queryset = DeliveryNoteMaterial.objects.select_related('supplier').prefetch_related('materialreceipt_set')
 
     def update(self, request, *args, **kwargs):
         
@@ -732,7 +730,7 @@ class DeliveryNoteMaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
 
 class MaterialReceiptManagementViewSet(CreateUpdateDeleteModelViewSet):
     serializer_class = MaterialReceiptManagementSerializer
-    queryset = MaterialReceipt.objects.all()
+    queryset = MaterialReceipt.objects.select_related('delivery_note_material','material_order','delivery_note_material__supplier','material_order__purchase_order_material','material_order__purchase_order_material__supplier','material_order__material','material_order__material__warehousematerial')
 
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']
@@ -744,28 +742,58 @@ class MaterialReceiptManagementViewSet(CreateUpdateDeleteModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+class ProductOrderListViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for get and retrieve product ordered, used in delivery module, ppic
+    '''
+    serializer_class = ProductOrderListSerializer
+    queryset   = ProductOrder.objects.select_related('product','sales_order','product__customer','product__type','sales_order__customer').filter(Q(done=False),Q(sales_order__fixed=True)&Q(sales_order__done=False))
+
+class CustomerProductOrderListViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for get product ordered based on customer selected, used in detail delivery note
+    '''
+    serializer_class = ProductOrderListSerializer
+    queryset = ProductOrder.objects.select_related('product','sales_order','product__customer','product__type','sales_order__customer').filter(Q(done=False),Q(sales_order__fixed=True)&Q(sales_order__done=False))
+
+class DeliveryScheduleListViewSet(ReadOnlyModelViewSet):
+    '''
+    a view set for get and retrieve delivery schedule
+    '''
+    serializer_class = DeliveryScheduleListSerializer
+    queryset = DeliverySchedule.objects.select_related('product_order','product_order__product','product_order__product__customer','product_order__product__type','product_order__sales_order','product_order__sales_order__customer').filter(Q(fulfilled_quantity__lte=0)&Q(product_order__done=False),Q(product_order__sales_order__fixed=True)&Q(product_order__sales_order__done=False)).order_by('date')
+
+
 class DeliveryNoteCustomerReadOnlyViewSet(ReadOnlyModelViewSet):
-    serializer_class = CustomerDeliveryNoteReadOnlySerializer
-    queryset = Customer.objects.prefetch_related(
-        Prefetch('ppic_deliverynotecustomer_related',queryset=DeliveryNoteCustomer.objects.prefetch_related(
-            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order')))))
+    '''
+    a view set for get and retrieve delivery note -> product delivery -> schedule if exists
+    '''
+    serializer_class = DeliveryNoteCustomerReadOnlySerializer
+    queryset = DeliveryNoteCustomer.objects.prefetch_related(
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order','schedules'))).select_related('customer','vehicle','driver')
 
 class DeliveryNoteCustomerManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a view set for create, update, delete delivery note
+    '''
     serializer_class = DeliveryNoteCustomerManagementSerializer
-    queryset = DeliveryNoteCustomer.objects.all()
+    queryset = DeliveryNoteCustomer.objects.select_related('driver','customer','vehicle').prefetch_related('productdelivercustomer_set')
 
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']
         instance_dn_customer = get_object_or_404(self.queryset,pk=pk)
-        if instance_dn_customer.producdelivercustomer_set.exists():
+        if instance_dn_customer.productdelivercustomer_set.exists():
             invalid()
 
         return super().destroy(request, *args, **kwargs)
 
 
 class ProductDeliverManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a view set for create, update, delete product delivery
+    '''
     serializer_class = ProductDeliverCustomerManagementSerializer
-    queryset = ProductDeliverCustomer.objects.all()
+    queryset = ProductDeliverCustomer.objects.select_related('delivery_note_customer','product_order','schedules','product_order__product','product_order__sales_order__customer','delivery_note_customer__customer')
 
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']
@@ -776,8 +804,11 @@ class ProductDeliverManagementViewSet(CreateUpdateDeleteModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 class MachineViewSet(ModelViewSet):
+    '''
+    viewset for crud machine
+    '''
     serializer_class = MachineSerializer
-    queryset = Machine.objects.all()
+    queryset = Machine.objects.annotate(numbers_of_production=Count('productionreport'))
 
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']
@@ -788,8 +819,11 @@ class MachineViewSet(ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 class OperatorViewSet(ModelViewSet):
+    '''
+    viewset for crud operator
+    '''
     serializer_class = OperatorSerializer
-    queryset = Operator.objects.all()
+    queryset = Operator.objects.annotate(numbers_of_production=Count('productionreport'))
 
     def destroy(self, request, *args, **kwargs):
 
@@ -800,17 +834,60 @@ class OperatorViewSet(ModelViewSet):
 
         return super().destroy(request, *args, **kwargs)
 
+class DriverViewSet(ModelViewSet):
+    '''
+    viewset for crud driver
+    '''
+    serializer_class = DriverSerializer
+    queryset = Driver.objects.annotate(numbers_of_delivery_customer=Count('deliverynotecustomer',distinct=True),numbers_of_delivery_subcont=Count('deliverynotesubcont',distinct=True))
+    
+    def destroy(self, request, *args, **kwargs):
+
+        pk = kwargs['pk']
+
+        instance = get_object_or_404(self.queryset,pk=pk)
+        if instance.deliverynotecustomer_set.exists():
+            invalid()
+
+        if instance.deliverynotesubcont_set.exists():
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
+
+
+class VehicleViewSet(ModelViewSet):
+    '''
+    viewset for crud vehicle
+    '''
+    serializer_class = VehicleSerializer
+    queryset = Vehicle.objects.annotate(numbers_of_delivery_customer=Count('deliverynotecustomer',distinct=True),numbers_of_delivery_subcont=Count('deliverynotesubcont',distinct=True))
+    
+    def destroy(self, request, *args, **kwargs):
+
+        pk = kwargs['pk']
+
+        instance = get_object_or_404(self.queryset,pk=pk)
+        if instance.deliverynotecustomer_set.exists():
+            invalid()
+
+        if instance.deliverynotesubcont_set.exists():
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
+
+
 
 class ProductionReportReadOnlyViewSet(ReadOnlyModelViewSet):
     serializer_class = ProductionReportReadOnlySerializer
-    queryset = ProductionReport.objects.all()
+    queryset = ProductionReport.objects.prefetch_related(
+        Prefetch('productproductionreport_set',ProductProductionReport.objects.select_related('product','product__customer','product__type')),
+        Prefetch('materialproductionreport_set',MaterialProductionReport.objects.select_related('material','material__uom','material__supplier'))).select_related('operator','machine','product','product__customer','product__type','process','process__product','process__process_type').order_by('date')
 
 
 class ProductionPriorityViewSet(ReadOnlyModelViewSet):
     serializer_class = ProductSerializer
     queryset = Product.objects.all()
 
-    
     @queryDebug
     def list(self, request, *args, **kwargs):
 
@@ -967,12 +1044,108 @@ class ProductionReportManagementViewSet(CreateUpdateDeleteModelViewSet):
 
 
 class DeliveryNoteSubcontManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a view set to handle cud (Create,Update,Delete) delivery note subcont
+    '''
     serializer_class = DeliveryNoteSubcontManagementSerializer
-    queryset = DeliveryNoteSubcont.objects.all()
+    queryset = DeliveryNoteSubcont.objects.prefetch_related('productdeliversubcont_set').select_related('driver','vehicle','supplier')
+
+    def destroy(self, request, *args, **kwargs):
+        
+        pk = kwargs['pk']
+        instance = get_object_or_404(self.queryset,pk=pk)
+
+        for productSubcont in instance.productdeliversubcont_set.all():
+            if productSubcont.quantity > 0:
+                ## if quantity product subconstruction that included in this delivery note is not zero, raise error 
+
+                invalid()
+
+        return super().destroy(request, *args, **kwargs)
 
 class ProductDeliverySubcontManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a view set to handle cud (Create,Update,Delete) product that included in delivery note subcont
+    '''
     serializer_class = ProductDeliverySubcontManagementSerializer
-    queryset = ProductDeliverSubcont.objects.prefetch_related('subcontreceipt_set').select_related('product','process','delivery_note_subcont')
+    queryset = ProductDeliverSubcont.objects.prefetch_related('subcontreceipt_set').select_related('product','process','deliver_note_subcont')
+
+    def destroy(self, request, *args, **kwargs):
+
+        pk = kwargs['pk']
+        instance = get_object_or_404(self.queryset,pk=pk)
+
+        if instance.quantity > 0:
+            ## if quantity product subconstruction sended to supplier is greater than zero, raise errorr
+
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
+
+class ReceiptSubcontScheduleManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a viewset to handle cud schedule of product in subconstruction
+    '''
+    serializer_class = ReceiptSubcontScheduleManagementSerializer
+    queryset = ReceiptSubcontSchedule.objects.select_related('product_subcont').prefetch_related('product_subcont__subcontreceipt_set')
+
+    def destroy(self, request, *args, **kwargs):
+
+        pk = kwargs['pk']
+        instance = get_object_or_404(self.queryset,pk=pk)
+        if instance.fulfilled_quantity > 0:
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
+
+class ReceiptSubcontScheduleListViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for get all arrival schedule of product subconstruction
+    '''
+    serializer_class = ReceiptSubcontScheduleListSerializer
+    queryset = ReceiptSubcontSchedule.objects.select_related('product_subcont','product_subcont__deliver_note_subcont','product_subcont__process','product_subcont__product','product_subcont__deliver_note_subcont__supplier','product_subcont__deliver_note_subcont__driver','product_subcont__deliver_note_subcont__vehicle','product_subcont__product__customer','product_subcont__product__type','product_subcont__process__process_type','product_subcont__process__product').annotate(received=Sum('product_subcont__subcontreceipt__quantity')).filter(~Q(fulfilled_quantity__gt=0),Q(received__lt=F('product_subcont__quantity')) |Q(received=None) )
+
+class ProductDeliverSubcontListViewSet(ReadOnlyModelViewSet):
+    '''
+    a view set to get all list of product that in subconstruction
+    '''
+    serializer_class = ProductDeliverSubcontListSerializer
+    queryset = ProductDeliverSubcont.objects.prefetch_related('subcontreceipt_set').select_related('deliver_note_subcont','process','product').annotate(received=Sum('subcontreceipt__quantity')).filter(Q(received__lt=F('quantity'))|Q(received=None))
+
+
+class ProductListSubcontReadOnlyViewSet(ReadOnlyModelViewSet):
+    '''
+    a view set to get all product that can be delivered in delivery product subconstruction
+    '''
+    serializer_class=ProductReadOnlySerializer
+    queryset = Product.objects.prefetch_related(
+            Prefetch('ppic_process_related',queryset=Process.objects.
+            prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type'))).
+            prefetch_related(
+                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
+            prefetch_related(
+                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type').filter(process_type=2) ))
+
+class DeliveryNoteSubcontReadOnlyViewSet(ReadOnlyModelViewSet):
+    '''
+    a view set to get and retrieve delivery product subconstruction
+    '''
+    serializer_class = DeliveryNoteSubcontReadOnlySerializer
+    queryset = DeliveryNoteSubcont.objects.prefetch_related(
+        Prefetch('productdeliversubcont_set',queryset=ProductDeliverSubcont.objects.select_related('deliver_note_subcont','product','process','deliver_note_subcont__driver','deliver_note_subcont__vehicle','deliver_note_subcont__supplier','product__customer','product__type','process__process_type','process__product').annotate(received=Sum('subcontreceipt__quantity')).prefetch_related(
+        Prefetch('requirementmaterialsubcont_set',queryset=RequirementMaterialSubcont.objects.select_related('product_subcont','material','material__uom','material__supplier') )).prefetch_related(
+            Prefetch('requirementproductsubcont_set',queryset=RequirementProductsubcont.objects.select_related('product_subcont','product','product__customer','product__type'))).prefetch_related('receiptsubcontschedule_set'))).select_related('driver','vehicle','supplier')
+
+
+class ProductDeliverSubcontReadOnlyViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for get product in subconstruction, nested to requirement material subcont, requirement product subcont, and arrival schedule
+    '''
+    serializer_class = ProductDeliverSubcontReadOnlySerializer
+    queryset = ProductDeliverSubcont.objects.select_related('deliver_note_subcont','product','process','deliver_note_subcont__driver','deliver_note_subcont__vehicle','deliver_note_subcont__supplier','product__customer','product__type','process__process_type','process__product').annotate(received=Sum('subcontreceipt__quantity')).prefetch_related(Prefetch('requirementmaterialsubcont_set',queryset=RequirementMaterialSubcont.objects.select_related('product_subcont','material','material__uom','material__supplier') )).prefetch_related(
+            Prefetch('requirementproductsubcont_set',queryset=RequirementProductsubcont.objects.select_related('product_subcont','product','product__customer','product__type'))).prefetch_related('receiptsubcontschedule_set').order_by('deliver_note_subcont__date')
+
 
 class ProcessManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
@@ -1013,5 +1186,74 @@ class ProcessManagementViewSet(CreateUpdateDeleteModelViewSet):
                 wh_product_prev_process.save()
         
         return super().destroy(request, *args, **kwargs)
+
+
+class SupplierListViewSet(ModelViewSet):
+    serializer_class=SupplierListSerializer
+    queryset = Supplier.objects.all()
+
+
+class ReceiptNoteSubcontManagementViewSet(ModelViewSet):
+    '''
+    a view set for management receipt note subcont
+    '''
+    serializer_class = ReceiptNoteSubcontManagementSerializer
+    queryset = ReceiptNoteSubcont.objects.prefetch_related('subcontreceipt_set').select_related('supplier')
+
+    
+    def update(self, request, *args, **kwargs):
+        
+        instance = self.get_object()
+        image  = request.data.get('image',None)
+        if image is not None and image =='':
+            instance.image.delete(save=True)
+        
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+
+        instance = get_object_or_404(self.queryset,pk=pk)
+
+        if instance.subcontreceipt_set.exists():
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
+
+
+class ReceiptNoteSubcontReadOnlyViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for get and retrieve receipt note subcont nested to product that received
+    '''
+    serializer_class = ReceiptNoteSubcontReadOnlySerializer
+    queryset = ReceiptNoteSubcont.objects.prefetch_related(
+        Prefetch('subcontreceipt_set',queryset=SubcontReceipt.objects.select_related('product_subcont','receipt_note','schedules','product_subcont__product','product_subcont__process','product_subcont__deliver_note_subcont','product_subcont__product__customer','product_subcont__product__type','product_subcont__process__product','product_subcont__process__process_type','product_subcont__deliver_note_subcont__driver','product_subcont__deliver_note_subcont__vehicle','product_subcont__deliver_note_subcont__supplier','schedules__product_subcont','schedules__product_subcont__product','schedules__product_subcont__process','schedules__product_subcont__deliver_note_subcont','receipt_note__supplier'))).select_related('supplier')
+
+
+class SubcontReceiptManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a viewset for cud (create, update, delete) subcont receipt or product received from subconstruction 
+    '''
+    serializer_class = SubcontReceiptManagementSerializer
+    queryset = SubcontReceipt.objects.select_related('product_subcont','receipt_note','schedules','product_subcont__product','product_subcont__process','product_subcont__deliver_note_subcont','receipt_note__supplier','schedules__product_subcont','product_subcont__deliver_note_subcont__supplier')
+
+    def destroy(self, request, *args, **kwargs):
+
+        pk = kwargs['pk']
+
+        instance = get_object_or_404(self.queryset,pk=pk)
+
+        if instance.quantity > 0:
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
+
+
+
+
+
+
+
+
 
 

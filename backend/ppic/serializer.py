@@ -1,4 +1,5 @@
 from rest_framework.serializers import ModelSerializer,StringRelatedField,ValidationError,PrimaryKeyRelatedField
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 from purchasing.models import Supplier
 from django.db.models import Q,Prefetch,Count
@@ -9,16 +10,29 @@ from manager.shortcuts import invalid
 from django.utils import timezone
 
 class DriverSerializer(ModelSerializer):
+    '''
+    a serializer for crud driver, and count all delivery with each driver
+    '''
+    numbers_of_delivery_customer = serializers.IntegerField(read_only=True)
+    numbers_of_delivery_subcont = serializers.IntegerField(read_only=True)
     class Meta:
         model = Driver
-        fields = ['name']
+        fields = '__all__'
 
 class MachineSerializer(ModelSerializer):
+    '''
+    a serializer for crud machine, and count all production related
+    '''
+    numbers_of_production = serializers.IntegerField(read_only=True)
     class Meta:
         model = Machine
         fields ='__all__'
 
 class OperatorSerializer(ModelSerializer):
+    '''
+    a serializer for crud operator, and count all production related
+    '''
+    numbers_of_production = serializers.IntegerField(read_only=True)
     class Meta:
         model = Operator
         fields ='__all__'
@@ -40,9 +54,14 @@ class UomListSerializer(ModelSerializer):
         fields = '__all__'
 
 class VehicleSerializer(ModelSerializer):
+    '''
+    a serializer for crud vehicle, and count all delivery related
+    '''
+    numbers_of_delivery_customer = serializers.IntegerField(read_only=True)
+    numbers_of_delivery_subcont = serializers.IntegerField(read_only=True)
     class Meta:
         model = Vehicle
-        fields = ['licence_part_number']
+        fields = '__all__'
     
 class ProductTypeSerializer(ModelSerializer):
     products = serializers.IntegerField(read_only=True)
@@ -66,6 +85,11 @@ class MaterialListSerializer(ModelSerializer):
     class Meta:
         model = Material
         fields = '__all__'
+
+class SupplierListSerializer(ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields ='__all__'
 
 ##################
 #### Product Read Only Seriz
@@ -143,7 +167,7 @@ class ProductCustomerReadOnlySerializer(ModelSerializer):
 
     class Meta:
         model = Customer
-        fields = ['id','name','email','phone','address','ppic_product_related']
+        fields = '__all__'
 
 #### Product read only seriz
 ######
@@ -794,11 +818,13 @@ class DetailMrpReadOnlySerializer(ModelSerializer):
 
 class MrpReadOnlySerializer(ModelSerializer):
     detailmrp_set = DetailMrpReadOnlySerializer(many=True)
+    material = MaterialProductionSerializer()
 
     class Meta:
         model = MaterialRequirementPlanning
         fields = ['id','material','quantity','detailmrp_set']
         depth = 2
+
 
 class DetailMrpManagementSerializer(ModelSerializer):
     class Meta:
@@ -951,7 +977,7 @@ class MaterialReceiptManagementSerializer(ModelSerializer):
     
     def validate_material_order(self,attrs):
         if attrs.done:
-                raise ValidationError('Order tersebut sudah selesai')
+                invalid('Order already done')
         
         return attrs
     
@@ -962,7 +988,7 @@ class MaterialReceiptManagementSerializer(ModelSerializer):
         material = attrs['material_order'].material
 
         if supplierPurchaseOrder is not supplierDeliveryNoteMaterial or material.supplier is not supplierDeliveryNoteMaterial:
-            raise ValidationError(f'{material.name} is not belongs to {supplierDeliveryNoteMaterial.name}')
+            invalid(f'{material.name} is not belongs to {supplierDeliveryNoteMaterial.name}')
 
         return super().validate(attrs)
 
@@ -975,6 +1001,8 @@ class MaterialReceiptManagementSerializer(ModelSerializer):
         
         schedules = validated_data.get('schedules',None)
         if schedules is not None:
+            ## if material receipt inputted by schedule, then set schedule
+
             schedules.fulfilled_quantity = validated_data['quantity']
             schedules.save()
 
@@ -995,10 +1023,10 @@ class MaterialReceiptManagementSerializer(ModelSerializer):
         instance_schedule = instance.schedules
 
         if instance_wh.quantity < 0:
-            raise ValidationError('Edit data gagal, karena material sudah digunakan untuk produksi')
+            invalid('Edit failed, probably material already used in production')
         
         if instance.material_order != validated_data['material_order']:
-            raise ValidationError('Update failed, cannot change material from material receipt')
+            invalid('Update failed, cannot change material from material receipt')
         
         instance_mo.arrived += validated_data['quantity']
         instance_wh.quantity += validated_data['quantity']
@@ -1026,6 +1054,18 @@ class MaterialReceiptManagementSerializer(ModelSerializer):
 
 class DeliveryNoteMaterialManagementSerializer(ModelSerializer):
     note = serializers.CharField(allow_blank=True)
+
+    def update(self, instance, validated_data):
+
+        instance.code = validated_data.get('code',instance.code)
+        instance.note = validated_data.get('note',instance.note)
+        instance.last_update = timezone.now()
+        instance.date = validated_data.get('date',instance.date)
+
+        instance.save()
+
+        return instance
+
     class Meta:
         model = DeliveryNoteMaterial
         fields = '__all__'
@@ -1047,7 +1087,8 @@ class DeliveryNoteCustomerReadOnlySerializer(ModelSerializer):
     productdelivercustomer_set = ProductDeliverCustomerReadOnlySerializer(many=True)
     class Meta:
         model = DeliveryNoteCustomer
-        exclude = ['customer']
+        fields ='__all__'
+        depth = 1
 
 class CustomerDeliveryNoteReadOnlySerializer(ModelSerializer):
     '''
@@ -1062,6 +1103,19 @@ class DeliveryNoteCustomerManagementSerializer(ModelSerializer):
     '''
     seriz for management delivery note customer
     '''
+
+    def update(self, instance, validated_data):
+
+        instance.code = validated_data.get('code',instance.code)
+        instance.note = validated_data.get('note',instance.note)
+        instance.driver = validated_data.get('driver',instance.driver)
+        instance.vehicle = validated_data.get('vehicle',instance.vehicle)
+        instance.date = validated_data.get('date',instance.date)
+        instance.last_update = timezone.now()
+        instance.save()
+
+        return instance
+
     class Meta:
         model = DeliveryNoteCustomer
         fields = '__all__'
@@ -1073,23 +1127,19 @@ class ProductDeliverCustomerManagementSerializer(ModelSerializer):
     '''    
     def validate_product_order(self,attrs):
         if attrs.done:
-            raise ValidationError('Order tersebut sudah selesai')
+            invalid('This order already finished')
 
         return attrs
     
     def validate(self, attrs):
-        po = attrs['product_order']
-        available_quantity_deliver = po.ordered - po.delivered
-        wh_product = po.product.ppic_warehouseproduct_related.get(warehouse_type=1)
+        customer_from_delivery_note = attrs['delivery_note_customer'].customer
+        customer_from_po = attrs['product_order'].sales_order.customer
 
-        if attrs['quantity'] > available_quantity_deliver:
-            raise ValidationError('Jumlah pengiriman melebihi jumlah order')
-        
-        if attrs['quantity'] > wh_product.quantity:
-            raise ValidationError('Stock finish good tidak cukup')
+        if customer_from_delivery_note != customer_from_po:
+            invalid(f'This order is not from {customer_from_delivery_note.name} ')
 
         return super().validate(attrs)
-
+    
     def fluence_stock(self,po,wh_product,quantity):
 
         wh_product.quantity -= quantity
@@ -1111,9 +1161,20 @@ class ProductDeliverCustomerManagementSerializer(ModelSerializer):
         self.fluence_stock(po,wh_product,new_quantity)
 
     def update(self, instance, validated_data):
+        
+        po = validated_data['product_order']
+        rest_quantity_product_to_shipped = po.ordered - po.delivered
+        wh_product = po.product.ppic_warehouseproduct_related.get(warehouse_type=1)
+
+        if validated_data['quantity'] > (rest_quantity_product_to_shipped+instance.quantity):
+            invalid('the number of shipments exceeds the number of orders')
+        
+        if validated_data['quantity'] > (wh_product.quantity+instance.quantity):
+            invalid('Insufficient stock of finished goods to make delivery')
+        
         if instance.paid:
-            raise ValidationError('Pengiriman product sudah lunas')
-        wh_product = instance.product_order.product.ppic_warehouseproduct_related.get(warehouse_type=1)
+            invalid('Product delivery is completed')
+
         validated_data.pop('schedules',None)
         instance_schedules = instance.schedules
         if instance_schedules is not None:
@@ -1122,17 +1183,29 @@ class ProductDeliverCustomerManagementSerializer(ModelSerializer):
             instance_schedules.save()
 
         self.fluence_stock_update(instance.product_order,wh_product,instance.quantity,validated_data['quantity'])
+        instance.quantity = validated_data.get('quantity',instance.quantity)
+        instance.save()
 
-
-        
-        return super().update(instance, validated_data)
+        return instance
 
     def create(self, validated_data):
+        
         po = validated_data['product_order']
+        rest_product_to_shipped = po.ordered - po.delivered
         wh_product = po.product.ppic_warehouseproduct_related.get(warehouse_type=1)
+
+        if validated_data['quantity'] > rest_product_to_shipped:
+            invalid('the number of shipments exceeds the number of orders')
+        
+        if validated_data['quantity'] > wh_product.quantity:
+            invalid('Insufficient stock of finished goods to make delivery')
+
         self.fluence_stock(po,wh_product,validated_data['quantity'])
         schedules = validated_data.get('schedules',None)
+        
         if schedules is not None:
+            ## if product delivery inputted from schedule
+
             schedules.fulfilled_quantity += validated_data['quantity']
             schedules.save()
 
@@ -1146,6 +1219,20 @@ class DeliveryNoteSubcontManagementSerializer(ModelSerializer):
     '''
     seriz for management delivery note product SUBCONSTRUCTION
     '''
+
+    def update(self, instance, validated_data):
+
+        instance.code = validated_data.get('code',instance.code)
+        instance.note = validated_data.get('note',instance.note)
+        instance.driver = validated_data.get('driver',instance.driver)
+        instance.vehicle = validated_data.get('vehicle',instance.vehicle)
+        instance.date = validated_data.get('date',instance.date)
+        instance.last_update = timezone.now()
+
+        instance.save()
+
+        return instance
+
     class Meta:
         model = DeliveryNoteSubcont
         fields= '__all__'
@@ -1162,7 +1249,7 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
             stock_in_wh = wh_material.quantity
             used_material = ceil((production_quantity / req_material.output) * req_material.input)
             if used_material > stock_in_wh:
-                raise ValidationError(f'Jumlah stok {req_material.material.name} tidak cukup')
+                invalid(f'Jumlah stok {req_material.material.name} tidak cukup')
  
 
     def sufficiency_req_product_check(self,req_products,production_quantity:int):
@@ -1173,33 +1260,28 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
             stock_in_whproduct = wh_product.quantity
             used_product = (production_quantity/req_product.output) * req_product.input
             if used_product > stock_in_whproduct:
-                raise ValidationError(f'Jumlah stok produk {product.name} tidak cukup')
+                invalid(f'Jumlah stok produk {product.name} tidak cukup')
 
     def validate(self, attrs):
 
         product = attrs['product']
         process = attrs['process']
         order = process.order
-        quantity_delivery = attrs['quantity']
 
         if order > 1:
-            prev_process = Process.objects.get(order = order-1, product = product)
-            warehouse_wip = prev_process.warehouseproduct_set.filter(warehouse_type__gt = 2).first()
             
-            if quantity_delivery > warehouse_wip.quantity:
-                raise ValidationError(f'Quantity stok of {product.name} is not enough to make this delivery')
+            try:
+                Process.objects.filter(order = order-1,product=product).prefetch_related(
+                    Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+            
+            except ObjectDoesNotExist:
+                invalid(f"Process wip{order-1} doesn't exists")
 
         if process not in product.ppic_process_related.all():
-            raise ValidationError(f'Proses tersebut bukan bagian dari work in process product {product.name}')
+            invalid(f"This process doesn't belongs to wip of {product.name}")
 
-        req_product = process.requirementproduct_set.select_related('product').prefetch_related(
-            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
-        
-        req_material = process.requirementmaterial_set.select_related('material__warehousematerial')
-        
-
-        self.suffciency_req_material_check(req_material,quantity_delivery)
-        self.sufficiency_req_product_check(req_product,quantity_delivery)
+        if process.process_type.id != 2:
+            invalid('Delivery only allowed in the subconstruction process')
 
         return super().validate(attrs)
     
@@ -1220,6 +1302,22 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
             'wh_product':[]
         }
 
+        if order > 1:
+        
+            prev_process = Process.objects.filter(order = order-1,product=product).prefetch_related(Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+            warehouse_wip = prev_process.warehouseproduct_set.first()
+            if quantity_delivery > warehouse_wip.quantity:
+                invalid(f'Quantity stock of {product.name} is not enough to make this delivery')
+
+        
+        req_product = process.requirementproduct_set.select_related('product').prefetch_related(
+            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+        
+        req_material = process.requirementmaterial_set.select_related('material__warehousematerial')
+
+        self.suffciency_req_material_check(req_material,quantity_delivery)
+        self.sufficiency_req_product_check(req_product,quantity_delivery)
+
         productDeliverSubcont = super().create(validated_data)
 
         if order > 1:
@@ -1231,7 +1329,7 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
             warehouse_wip.quantity -= (quantity_delivery)
             warehouse_wip.save()
          
-        warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type = 2).first()
+        warehouse_subcont = process.warehouseproduct_set.filter(warehouse_type = 2).get()
         warehouse_subcont.quantity += (quantity_delivery)
         warehouse_subcont.save()
         
@@ -1285,8 +1383,8 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
 
         process = instance.process
 
-        material_reports = instance.requirementmaterialsubcont_set.select_related('material')
-        product_reports = instance.requirementproductsubcont_set.select_related('product')
+        requirement_material_subcont = instance.requirementmaterialsubcont_set.select_related('material')
+        requirement_product_subcont = instance.requirementproductsubcont_set.select_related('product')
 
         req_materials = process.requirementmaterial_set.select_related('material__warehousematerial')
         req_products = process.requirementproduct_set.select_related('product').prefetch_related(
@@ -1296,13 +1394,13 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
         req_prod = [x.product for x in req_products]
 
 
-        for report in material_reports:
+        for report in requirement_material_subcont:
             try:
                 req_mats.remove(report.material)
             except:
                 self.invalid_requirement()
 
-        for report in product_reports:
+        for report in requirement_product_subcont:
             try:
                 req_prod.remove(report.product)
             except:
@@ -1313,7 +1411,7 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
         if len(req_prod) > 0:
             self.invalid_requirement()
 
-        return req_materials,req_products,material_reports,product_reports
+        return req_materials,req_products,requirement_material_subcont,requirement_product_subcont
 
     
     def invalid_requirement(self):
@@ -1321,11 +1419,165 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
         return invalid('Cannot change delivery product subcont, because material requirements or product requirements in this subcont process have changed')
 
     def update(self, instance, validated_data):
-        return super().update(instance, validated_data)
+        '''
+        update product delivery subconstruction to customer, then update every requirement product, requirement material, and also update stock in warehouse
+        '''
+        
+        prev_quantity_delivery = instance.quantity 
+        quantity_delivery = validated_data['quantity'] 
+        instance_product = instance.product
+        process = instance.process
+        req_materials,req_products,material_reports,product_reports = self.requirement_check(instance)
+        order = process.order
+
+        if quantity_delivery > prev_quantity_delivery:
+
+            ## if new quantity to send is greater than previous, check availability rest quantity to send is sufficent or not
+            rest_quantity_product_to_proceed = quantity_delivery - prev_quantity_delivery
+
+            if order > 1:
+            
+                prev_process = Process.objects.filter(order = order-1,product=instance_product).prefetch_related(Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+                warehouse_wip = prev_process.warehouseproduct_set.first()
+                if rest_quantity_product_to_proceed > warehouse_wip.quantity:
+                    invalid(f'Quantity stock of {instance_product.name} is not enough to make this delivery')
+
+            
+            req_product = process.requirementproduct_set.select_related('product').prefetch_related(
+                Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+            
+            req_material = process.requirementmaterial_set.select_related('material__warehousematerial')
+
+            self.suffciency_req_material_check(req_material,rest_quantity_product_to_proceed)
+            self.sufficiency_req_product_check(req_product,rest_quantity_product_to_proceed)
+
+
+        total_quantity_received = 0
+        for received_subcont in instance.subcontreceipt_set.all():
+            ## check if product received from subcont is greater than quantity that want to update
+
+            total_quantity_received += received_subcont.quantity
+            if total_quantity_received > quantity_delivery:
+                invalid('Error when updating product subconstruction')
+
+
+        updated = {
+            'wh_material':[],
+            'wh_product':[],
+            'material_reports':[],
+            'product_reports':[],
+        }
+
+        product_delivery_subcont = super().update(instance, validated_data)
+        
+        if order > 1:
+            
+            prev_process = Process.objects.filter(order = order-1,product=instance_product).prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+
+            warehouse_wip = prev_process.warehouseproduct_set.get()
+            warehouse_wip.quantity += (prev_quantity_delivery)
+            warehouse_wip.quantity -= (quantity_delivery)
+            warehouse_wip.save()
+        
+
+        for req_material in req_materials:
+            ## loop each requirement material that become requirement of this process subcont
+
+            material = req_material.material
+            wh_material = material.warehousematerial
+            prev_used_material = (prev_quantity_delivery / req_material.output) * req_material.input
+            ceiled_prev_used_material = ceil(prev_used_material)
+            prev_rest_material = ceiled_prev_used_material - prev_used_material
+
+            current_used_material = (quantity_delivery / req_material.output) * req_material.input
+            ceiled_current_used_material = ceil(current_used_material)
+            current_rest_material = ceiled_current_used_material - current_used_material
+
+
+            wh_material.quantity += ceiled_prev_used_material
+            wh_material.quantity -= ceiled_current_used_material
+            
+            try:
+                obj = WarehouseScrapMaterial.objects.get(material=material)
+            except:
+                obj = WarehouseScrapMaterial.objects.create(material=material,quantity=0)
+
+            if current_rest_material > 0:
+                if prev_rest_material > 0:
+                    obj.quantity -= prev_rest_material
+                    obj.quantity += current_rest_material
+                else:
+                    obj.quantity += current_rest_material
+            else:
+                if prev_rest_material > 0:
+                    obj.quantity -= prev_rest_material
+            obj.save()
+
+            
+            updated['wh_material'].append(wh_material)
+
+            for report in material_reports.filter(material=material):
+                report.quantity = ceiled_current_used_material
+                updated['material_reports'].append(report)
+                
+
+        for req_product in req_products:
+            ## loop each requirement material that become requirement of this process subcont
+
+            product = req_product.product
+            wh_product = product.ppic_warehouseproduct_related.get()
+            prev_used_product = ceil((prev_quantity_delivery / req_product.output) * req_product.input)
+            used_product = ceil((quantity_delivery / req_product.output) * req_product.input)
+
+            wh_product.quantity += prev_used_product
+            wh_product.quantity -= used_product
+
+            updated['wh_product'].append(wh_product)
+
+            for report in product_reports.filter(product=product):
+                report.quantity = used_product
+                updated['product_reports'].append(report)
+                
+
+
+        wh_subcont = process.warehouseproduct_set.filter(warehouse_type = 2).get()
+        wh_subcont.quantity -= prev_quantity_delivery
+        wh_subcont.quantity += quantity_delivery
+        
+        updated['wh_product'].append(wh_subcont)
+
+        WarehouseProduct.objects.bulk_update(updated['wh_product'],['quantity'])
+        WarehouseMaterial.objects.bulk_update(updated['wh_material'],['quantity'])
+
+        RequirementMaterialSubcont.objects.bulk_update(updated['material_reports'],['quantity'])
+        RequirementProductsubcont.objects.bulk_update(updated['product_reports'],['quantity'])
+
+
+        return product_delivery_subcont
 
     class Meta:
         model = ProductDeliverSubcont
         fields = '__all__'
+
+class ReceiptSubcontScheduleListSerializer(ModelSerializer):
+    '''
+    a serializer for get list schedule of product in subconstruction
+    '''
+    class Meta:
+        model = ReceiptSubcontSchedule
+        fields = '__all__'
+        depth = 3
+
+class ProductDeliverSubcontListSerializer(ModelSerializer):
+    '''
+    a serializer for get all list of product that in subconstrucion
+    '''
+    received = serializers.IntegerField(read_only=True)
+    class Meta:
+        model = ProductDeliverSubcont
+        fields = '__all__'
+        depth = 1
 
 class MaterialProductionReportReadOnlySerializer(ModelSerializer):
     class Meta:
@@ -1351,7 +1603,9 @@ class ProductionReportReadOnlySerializer(ModelSerializer):
 
 
 class ProductionReportManagementSerializer(ModelSerializer):
-
+    '''
+    a serializer for cud (create,update,delete) production report, and affect to all inventory(requirement material, requirement product) related with particular process of product
+    '''
 
     def suffciency_req_material_check(self,req_materials,production_quantity:int):
         
@@ -1378,28 +1632,16 @@ class ProductionReportManagementSerializer(ModelSerializer):
         product = attrs['product']
         process = attrs['process']
         order = process.order
-        quantity_production = attrs['quantity'] + attrs['quantity_not_good']
 
         if order > 1:
             try:
-                prev_process = Process.objects.get(order = order-1, product = product)
-                warehouse_wip = prev_process.warehouseproduct_set.filter(warehouse_type__gt = 2).first()
-                
-                if quantity_production > warehouse_wip.quantity:
-                    raise ValidationError(f'Quantity stok wip{product.name} is not enough for make production')
-            except:
+                Process.objects.get(order = order-1, product = product)
+
+            except ObjectDoesNotExist :
                 invalid(f"Process wip{order-1} doesn't exists ")
 
         if process not in product.ppic_process_related.all():
-            raise ValidationError(f'Invalid process')
-
-        req_product = process.requirementproduct_set.select_related('product').prefetch_related(
-            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
-        
-        req_material = process.requirementmaterial_set.select_related('material__warehousematerial')
-        
-        self.suffciency_req_material_check(req_material,quantity_production)
-        self.sufficiency_req_product_check(req_product,quantity_production)
+            invalid(f'Invalid process')
 
         return super().validate(attrs)
 
@@ -1435,17 +1677,33 @@ class ProductionReportManagementSerializer(ModelSerializer):
             'wh_product':[]
         }
 
+        if order > 1:
+        
+            prev_process = Process.objects.get(order = order-1, product = product)
+            warehouse_wip = prev_process.warehouseproduct_set.filter(warehouse_type__gt = 2).get()
+            
+            if quantity_production > warehouse_wip.quantity:
+                invalid(f'Quantity stok wip{product.name} is not enough for make production')
+
+        
+        req_product = process.requirementproduct_set.select_related('product').prefetch_related(
+            Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+        
+        req_material = process.requirementmaterial_set.select_related('material__warehousematerial')
+        
+        self.suffciency_req_material_check(req_material,quantity_production)
+        self.sufficiency_req_product_check(req_product,quantity_production)
+
         production_report = super().create(validated_data)
 
         if order > 1:
-            try:
-                prev_process = Process.objects.filter(order = order-1,product=product).prefetch_related(
-                    Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
-                warehouse_wip = prev_process.warehouseproduct_set.first()
-                warehouse_wip.quantity -= (quantity_production)
-                warehouse_wip.save()
-            except:
-                invalid(f"Process wip{order-1} doesn't exists")
+            
+            prev_process = Process.objects.filter(order = order-1,product=product).prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+            warehouse_wip = prev_process.warehouseproduct_set.get()
+            warehouse_wip.quantity -= (quantity_production)
+            warehouse_wip.save()
+            
 
         req_materials = process.requirementmaterial_set.select_related('material__warehousematerial')
         req_products = process.requirementproduct_set.select_related('product').prefetch_related(
@@ -1541,6 +1799,8 @@ class ProductionReportManagementSerializer(ModelSerializer):
 
         prev_quantity_production = instance.quantity + instance.quantity_not_good
         quantity_production = validated_data['quantity'] + validated_data['quantity_not_good']
+        prev_quantity = instance.quantity
+        current_quantity = validated_data['quantity']
         instance_product = instance.product
         process = instance.process
         req_materials,req_products,material_reports,product_reports = self.requirement_check(instance)
@@ -1553,22 +1813,44 @@ class ProductionReportManagementSerializer(ModelSerializer):
             'product_reports':[],
         }
 
+        
+        if quantity_production > prev_quantity_production:
+
+            ## if new quantity to produce is greater than previous, check availability of inventory(requirement material, requirement product) for the rest of product to produce
+            rest_quantity_to_produce = quantity_production - prev_quantity_production
+
+            if order > 1:
+                    prev_process = Process.objects.get(order = order-1, product = instance_product)
+                    warehouse_wip = prev_process.warehouseproduct_set.filter(warehouse_type__gt = 2).get()
+                    
+                    if rest_quantity_to_produce > warehouse_wip.quantity:
+                        invalid(f'Quantity stok wip{instance_product.name} is not enough for make production')
+            
+            req_product = process.requirementproduct_set.select_related('product').prefetch_related(
+                Prefetch('product__ppic_warehouseproduct_related',queryset = WarehouseProduct.objects.filter(warehouse_type = 1)))
+            
+            req_material = process.requirementmaterial_set.select_related('material__warehousematerial')
+            
+            self.suffciency_req_material_check(req_material,rest_quantity_to_produce)
+            self.sufficiency_req_product_check(req_product,rest_quantity_to_produce)
+
+
+
         production_report = super().update(instance, validated_data)
         production_report.last_update = timezone.now()
         production_report.save(update_fields=['last_update'])
 
 
         if order > 1:
-            try:
-                prev_process = Process.objects.filter(order = order-1,product=instance_product).prefetch_related(
-                    Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
+            
+            prev_process = Process.objects.filter(order = order-1,product=instance_product).prefetch_related(
+                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.filter(warehouse_type__gt=2))).get()
 
-                warehouse_wip = prev_process.warehouseproduct_set.first()
-                warehouse_wip.quantity += (prev_quantity_production)
-                warehouse_wip.quantity -= (quantity_production)
-                warehouse_wip.save()
-            except:
-                invalid(f"Process wip${order-1} doesn't exists ")
+            warehouse_wip = prev_process.warehouseproduct_set.get()
+            warehouse_wip.quantity += (prev_quantity_production)
+            warehouse_wip.quantity -= (quantity_production)
+            warehouse_wip.save()
+        
 
         for req_material in req_materials:
             material = req_material.material
@@ -1627,8 +1909,8 @@ class ProductionReportManagementSerializer(ModelSerializer):
 
 
         wh_current_wip = process.warehouseproduct_set.exclude(warehouse_type = 2).first()
-        wh_current_wip.quantity -= instance.quantity
-        wh_current_wip.quantity += validated_data['quantity']
+        wh_current_wip.quantity -= prev_quantity
+        wh_current_wip.quantity += current_quantity
         
         updated['wh_product'].append(wh_current_wip)
 
@@ -1678,6 +1960,274 @@ class ProductSerializer(ModelSerializer):
     ppic_process_related = ProcessProductionSerializer(many=True)
     class Meta:
         model = Product
+        fields = '__all__'
+
+class SubcontReceiptReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer for get and retrieve product received from subconstruction
+    '''
+
+    class Meta:
+        model = SubcontReceipt
+        fields = '__all__'
+
+class RequirementMaterialSubcontSerializer(ModelSerializer):
+    '''
+    serializer for get nested requirement material for delivery product subconstruction
+    '''
+    class Meta:
+        model = RequirementMaterialSubcont
+        fields = '__all__'
+        depth = 2
+
+class RequirementProductSubcontSerializer(ModelSerializer):
+    '''
+    serializer for get nested requirement product for delivery product subconstruction
+    '''
+    class Meta:
+        model = RequirementProductsubcont
         fields ='__all__'
+        depth = 2
+
+class ReceiptSubcontScheduleReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer for get nested schedule of product in subconstruction
+    '''
+    class Meta:
+        model = ReceiptSubcontSchedule
+        exclude = ['product_subcont']
+
+class ProductDeliverSubcontReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer for get and retrieve product that delivered to subconstruction
+    '''
+    requirementmaterialsubcont_set = RequirementMaterialSubcontSerializer(many=True)
+    requirementproductsubcont_set = RequirementProductSubcontSerializer(many=True)
+    received = serializers.IntegerField(read_only=True)
+    receiptsubcontschedule_set = ReceiptSubcontScheduleReadOnlySerializer(many=True)
+
+    class Meta:
+        model = ProductDeliverSubcont
+        fields = '__all__'
+        depth = 2
+
+class DeliveryNoteSubcontReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer for get and retrieve delivery note subconstruction
+    '''
+    productdeliversubcont_set = ProductDeliverSubcontReadOnlySerializer(many=True)
+    class Meta:
+        model = DeliveryNoteSubcont
+        fields = '__all__'
+        depth = 1
+
+class ReceiptSubcontScheduleManagementSerializer(ModelSerializer):
+    '''
+    a serializer for cud SCHEDULE product that shipped in subconstruction
+    '''
+    class Meta:
+        model = ReceiptSubcontSchedule
+        fields = '__all__'
+    
+    def validate(self, attrs):
+
+        productSubconstruction = attrs['product_subcont']
+        tempQuantityReceived = 0
+        quantity = attrs['quantity']
+
+        for receivedProductSubcont in productSubconstruction.subcontreceipt_set.all():
+            tempQuantityReceived += receivedProductSubcont.quantity
+
+        numberLeftToSchedule = productSubconstruction.quantity - tempQuantityReceived
+
+        if quantity > numberLeftToSchedule:
+            invalid(f'Cannot make arrival schedule with amount of {quantity}')
+
+        return super().validate(attrs)
+
+
+class DeliveryScheduleListSerializer(ModelSerializer):
+    '''
+    a serializer for get and retrieve delivery schedule
+    '''
+    class Meta:
+        model = DeliverySchedule
+        fields= '__all__'
+        depth = 3
+
+class ProductOrderListSerializer(ModelSerializer):
+    '''
+    a serializer class for get and retrieve product ordered
+    '''
+    class Meta:
+        model = ProductOrder
+        fields ='__all__'
+        depth = 2
+
+class CustomerProductOrderListSerializer(ModelSerializer):
+    '''
+    a serializer class for get product ordered based on customer selected, on page detail delivery note
+    '''
+    ppic_productorder_related = ProductOrderListSerializer(many=True)
+    class Meta:
+        model = Customer
+        fields = '__all__'
+
+
+class ReceiptNoteSubcontManagementSerializer(ModelSerializer):
+    '''
+    a serializer for crud receipt note subcont
+    '''
+
+    def update(self, instance, validated_data):
+
+        instance.code = validated_data.get('code',instance.code)
+        instance.note = validated_data.get('note',instance.note)
+        instance.date = validated_data.get('date',instance.date)
+        instance.last_update = timezone.now()
+        instance.save()
+
+        return instance
+
+    class Meta:
+        model = ReceiptNoteSubcont
+        fields = '__all__'
+
+
+class SubcontReceiptReadOnlySerializer(ModelSerializer):
+    '''
+    a nested serializer for get all product received from receipt note
+    '''
+    class Meta:
+        model = SubcontReceipt
+        fields ='__all__'
+        depth = 3
+
+
+class ReceiptNoteSubcontReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer for get and retrieve receipt note subcont
+    '''
+    subcontreceipt_set = SubcontReceiptReadOnlySerializer(many=True)
+    class Meta:
+        model = ReceiptNoteSubcont
+        fields ='__all__'
+        depth = 1
+
+
+class SubcontReceiptManagementSerializer(ModelSerializer):
+    '''
+    a serializer for cud (create, read, update) subcont receipt a.k.a product received from receipt note subconstruction
+    '''
+    class Meta:
+        model = SubcontReceipt
+        fields ='__all__'
+
+    def validate_product_subcont(self,attrs):
+        
+        subcontReceived = attrs.subcontreceipt_set.all()
+        tempQuantity = 0
+        quantityShipped = attrs.quantity
+
+        for subcontReceived in attrs.subcontreceipt_set.all():
+            tempQuantity += subcontReceived.quantity
+        
+        if tempQuantity >= quantityShipped:
+            invalid('All products that sent to the sub-construction have been received')
+
+        return attrs
+    
+    def validate(self, attrs):
+
+        supplier_product_subcont = attrs['product_subcont'].deliver_note_subcont.supplier
+        supplierReceiptNote = attrs['receipt_note'].supplier
+        delivered_product_subcont = attrs['product_subcont']
+        
+        productSubcont = delivered_product_subcont.product
+
+        if supplierReceiptNote != supplier_product_subcont:
+            ## check if supplier from receipt note is the same with supplier from product in subconstruction
+            
+            invalid(f'Subconstruction delivery of product {productSubcont.name} is not with {supplier_product_subcont.name}')
+
+        return super().validate(attrs)
+
+    def create(self, validated_data):
+        
+        product_shipped_subconstruction = validated_data['product_subcont']
+        process = product_shipped_subconstruction.process
+        quantityProduction = validated_data['quantity'] + validated_data['quantity_not_good']
+
+        whProduct = process.warehouseproduct_set.exclude(warehouse_type=2).get()
+        whSubcont = process.warehouseproduct_set.filter(warehouse_type=2).get()
+        
+        if quantityProduction > whSubcont.quantity:
+            ## check availability for product in warehouse
+
+            invalid(f'Quantity product received greater than product in subconstruction')
+
+        whProduct.quantity += validated_data['quantity']
+        whSubcont.quantity -= (quantityProduction)
+        
+        schedules = validated_data.get('schedules',None)
+        if schedules is not None:
+            ## if material receipt inputted by schedule, then set schedule
+
+            schedules.fulfilled_quantity = validated_data['quantity']
+            schedules.save()
+
+        whProduct.save()
+        whSubcont.save()
+
+        return super().create(validated_data)
+    
+    
+    def update(self, instance, validated_data):
+
+        instance_product_shipped_subconstruction = instance.product_subcont
+        process = instance_product_shipped_subconstruction.process
+        
+        whProduct = process.warehouseproduct_set.exclude(warehouse_type=2).get()
+        whSubcont = process.warehouseproduct_set.filter(warehouse_type=2).get()
+        
+        if validated_data['quantity'] > instance.quantity:
+            ## if new quantity to update is greater than previous, check availability for product in warehouse
+
+            rest_product_to_received = validated_data['quantity'] - instance.quantity
+            if rest_product_to_received > whSubcont.quantity:
+                invalid(f'Quantity product received greater than product in subconstruction')
+
+        whProduct.quantity -= instance.quantity 
+        whSubcont.quantity += (instance.quantity + instance.quantity_not_good)
+
+        instance_schedule = instance.schedules
+
+        if whProduct.quantity < 0:
+            invalid('Update failed, probably because this product has been used in production')
+        
+        if instance_product_shipped_subconstruction != validated_data['product_subcont']:
+            invalid('Update failed, cannot change product subconstruction')
+        
+        whProduct.quantity += validated_data['quantity']
+        whSubcont.quantity -= (validated_data['quantity']+validated_data['quantity_not_good'])
+
+        if instance_schedule is not None:
+            instance_schedule.fulfilled_quantity -= instance.quantity
+            instance_schedule.fulfilled_quantity += validated_data['quantity']
+            instance_schedule.save()
+
+        
+        validated_data.pop('schedules',None)
+        
+        whProduct.save()
+        whSubcont.save()
+
+        return super().update(instance, validated_data)
+
+
+
+
+
+
 
 

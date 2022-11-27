@@ -58,7 +58,6 @@ router.register(r'deliverynote-material',DeliveryNoteMaterialReadOnlyViewSet,bas
 router.register(r'deliverynote-material-management',DeliveryNoteMaterialManagementViewSet,basename='deliverynote-material-management')
 router.register(r'material-receipt-management',MaterialReceiptManagementViewSet,basename='material-receipt-management')
 
-router.register(r'customer-product-order-list',CustomerProductOrderListViewSet,basename='customer-product-order-list')
 router.register(r'product-order-list',ProductOrderListViewSet,basename='product-order-list')
 router.register(r'delivery-schedule',DeliveryScheduleListViewSet,basename='delivery-schedule')
 router.register(r'delivery-note',DeliveryNoteCustomerReadOnlyViewSet,basename='delivery-note-customer')
@@ -84,6 +83,12 @@ router.register(r'production-report',ProductionReportReadOnlyViewSet,basename='p
 router.register(r'production-report-management',ProductionReportManagementViewSet,basename='production-report-management')
 router.register(r'production-priority',ProductionPriorityViewSet,basename='production-priority')
 router.register(r'production-list',ProductionListViewSet,basename='production-list')
+
+router.register(r'list-product-in-order',ProductOrderedViewSet,basename='list-product-in-order')
+router.register(r'list-material-in-order',MaterialOrderedViewSet,basename='list-material-in-order')
+router.register(r'monthly-production-report',MonthlyProductionReportViewSet,basename='monthly-production-report')
+
+
 
 urlpatterns = [
     path('',include(router.urls)),  

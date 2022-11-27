@@ -77,9 +77,11 @@ class ProcessTypeSerializer(ModelSerializer):
         
 
 class ProductListSerializer(ModelSerializer):
+    rest_order = serializers.IntegerField(read_only=True) ## additional field used in rest order in dashboard page
     class Meta:
         model = Product
         fields = '__all__'
+        depth = 1
 
 class MaterialListSerializer(ModelSerializer):
     class Meta:
@@ -645,6 +647,7 @@ class MaterialDetailSerializer(ModelSerializer):
 class MaterialListSerializer(ModelSerializer):
     ppic_requirementmaterial_related = RequirementReadOnlySerializer(many=True)
     warehousematerial = WarehouseMaterialReadOnlySerializer()
+    rest_arrival = serializers.IntegerField(read_only=True)
     class Meta:
         model = Material
         fields = '__all__'
@@ -2224,7 +2227,17 @@ class SubcontReceiptManagementSerializer(ModelSerializer):
 
         return super().update(instance, validated_data)
 
-
+class MonthlyProductionReportSerializer(ModelSerializer):
+    '''
+    a serializer for get total quantity production on every month
+    '''
+    date__year = serializers.IntegerField()
+    date__month = serializers.IntegerField()
+    total_production = serializers.IntegerField()
+    class Meta:
+        model = ProductionReport
+        fields = ['date__month','total_production','date__year']
+        read_only_fields = ['date__year','date__month','total_production']
 
 
 

@@ -960,7 +960,7 @@ class MaterialReceiptReadOnlySerializer(ModelSerializer):
     class Meta:
         model = MaterialReceipt
         exclude = ['delivery_note_material']
-        depth = 2
+        depth = 3
 
 class DeliveryNoteMaterialReadOnlySerializer(ModelSerializer):
     materialreceipt_set = MaterialReceiptReadOnlySerializer(many=True)

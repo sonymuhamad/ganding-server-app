@@ -2,7 +2,6 @@ from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpda
 
 from rest_framework.serializers import ValidationError
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
 from rest_framework import status
 
 from math import ceil
@@ -10,7 +9,6 @@ import functools
 import time
 from django.db import connection, reset_queries
 from django.db.models import Prefetch,Q,Sum,F,Count
-from django.db.models.lookups import LessThan
 from django.shortcuts import get_object_or_404
 from dateutil import rrule
 
@@ -164,32 +162,33 @@ class MonthlyProductionReportViewSet(GetModelViewSet):
     a viewset for get monthly report of total production
     '''
     serializer_class = MonthlyProductionReportSerializer
-    queryset = ProductionReport.objects.filter(Q(process__warehouseproduct__warehouse_type__id__contains=1),date__lte=date.today()).values('date__year','date__month').annotate(total_production=Sum('quantity')+Sum('quantity_not_good')).order_by('date__year','date__month')
+    queryset = ProductionReport.objects.filter(Q(process__warehouseproduct__warehouse_type__id__contains=1),date__lte=date.today()).values('date__year','date__month').annotate(total_production=Sum('quantity',default=0)+Sum('quantity_not_good',default=0)).order_by('date__year','date__month')
 
     def list(self, request, *args, **kwargs):
         '''
         endpoint to get all production finished goods for every month,
         '''
         
+        validate_data = []
         queryset = self.filter_queryset(self.get_queryset())
         start = queryset.first()
         end = queryset.last()
-        start_date = date(start['date__year'],start['date__month'],1)
-        end_date = date(end['date__year'],end['date__month'],1)
-        
-        validate_data = []
 
-        for dt in rrule.rrule(rrule.MONTHLY,dtstart=start_date,until=end_date):
-            try:
-                data = queryset.get(date__year=dt.year,date__month=dt.month)
-                validate_data.append(data)
-            except:
-                temp_data = {
-                    'date__year':dt.year,
-                    'date__month':dt.month,
-                    'total_production':0
-                }
-                validate_data.append(temp_data)
+        if start:
+            start_date = date(start['date__year'],start['date__month'],1)
+            end_date = date(end['date__year'],end['date__month'],1)        
+
+            for dt in rrule.rrule(rrule.MONTHLY,dtstart=start_date,until=end_date):
+                try:
+                    data = queryset.get(date__year=dt.year,date__month=dt.month)
+                    validate_data.append(data)
+                except:
+                    temp_data = {
+                        'date__year':dt.year,
+                        'date__month':dt.month,
+                        'total_production':0
+                    }
+                    validate_data.append(temp_data)
 
         serializer = self.get_serializer(validate_data, many=True)
         return Response(serializer.data)
@@ -201,7 +200,8 @@ class MaterialListViewSet(ReadOnlyModelViewSet):
     a viewset for handling request for list of materials
     '''
     serializer_class = MaterialListSerializer
-    queryset = Material.objects.prefetch_related(Prefetch('ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product'))).select_related('warehousematerial','uom','supplier')
+    queryset = Material.objects.prefetch_related(
+        Prefetch('ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product'))).select_related('warehousematerial','uom','supplier')
 
 
 class CustomerListViewSet(ReadOnlyModelViewSet):
@@ -354,7 +354,6 @@ class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
     queryset = MaterialRequirementPlanning.objects.prefetch_related(
         Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product'))).select_related('material','material__supplier','material__uom')
 
-    @queryDebug
     def list(self, request, *args, **kwargs):
         '''
         a list for material requirement planning recommendation in material page 
@@ -766,8 +765,7 @@ class MaterialReceiptScheduleReadOnlyViewSet(ReadOnlyModelViewSet):
 class DeliveryNoteMaterialReadOnlyViewSet(ReadOnlyModelViewSet):
     serializer_class = DeliveryNoteMaterialReadOnlySerializer
     queryset = DeliveryNoteMaterial.objects.prefetch_related(
-            Prefetch('materialreceipt_set',queryset=MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material'))).select_related('supplier')
-
+            Prefetch('materialreceipt_set',queryset=MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier'))).select_related('supplier')
 
 
 class DeliveryNoteMaterialManagementViewSet(CreateUpdateDeleteModelViewSet):

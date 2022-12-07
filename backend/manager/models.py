@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from datetime import date
 
 class AbstractCustomerVendor(models.Model):
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255,unique=True)
     email = models.EmailField()
     phone = models.PositiveBigIntegerField()
     address = models.TextField()

@@ -120,27 +120,20 @@ class BasedConversionMaterial(models.Model):
         unique_together = [['material_input','material_output']]
 
 class ConversionMaterialReport(AbstractCreated):
-    quantity_input = models.PositiveIntegerField()
+    quantity_input = models.FloatField()
     material_input = models.ForeignKey(Material,on_delete=models.CASCADE,related_name='report_material_inputs')
     quantity_output = models.PositiveIntegerField()
     material_output = models.ForeignKey(Material,on_delete=models.CASCADE,related_name='report_material_outputs')
     last_update = models.DateTimeField(blank=True,null=True)
     
 
-class WarehouseMaterial(AbstractWarehouse):
+class WarehouseMaterial(models.Model):
     '''
     every material stock are store in this table
     '''
+    quantity = models.FloatField(default=0)
     material = models.OneToOneField(Material,on_delete=models.CASCADE)
     
-
-class WarehouseScrapMaterial(models.Model):
-    '''
-    leftover material of the productions
-    '''
-    material = models.OneToOneField(Material,on_delete=models.CASCADE)
-    quantity = models.FloatField()
-
 class Process(AbstractProduct):
     '''
     work in process
@@ -221,9 +214,10 @@ class RequirementProductsubcont(AbstractProduct,AbstractQuantity):
     class Meta(AbstractProduct.Meta,AbstractQuantity.Meta):
         pass
 
-class RequirementMaterialSubcont(AbstractMaterial,AbstractQuantity):
+class RequirementMaterialSubcont(AbstractMaterial):
     '''
     '''
+    quantity = models.FloatField()
     product_subcont = models.ForeignKey(ProductDeliverSubcont,on_delete=models.CASCADE)
     class Meta(AbstractMaterial.Meta,AbstractQuantity.Meta):
         pass
@@ -329,13 +323,14 @@ class ProductionReport(AbstractProduct,AbstractCreated,AbstractQuantity):
     class Meta(AbstractProduct.Meta,AbstractCreated.Meta,AbstractQuantity.Meta):
         pass
 
-class MaterialProductionReport(AbstractQuantity,AbstractMaterial):
+class MaterialProductionReport(AbstractMaterial):
     '''
     hold data for quantity of material that used in particular production
     '''
+    quantity = models.FloatField()
     production_report = models.ForeignKey(ProductionReport,on_delete=models.CASCADE)
 
-    class Meta(AbstractQuantity.Meta,AbstractMaterial.Meta):
+    class Meta(AbstractMaterial.Meta):
         pass
 
 

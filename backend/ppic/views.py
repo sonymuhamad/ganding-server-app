@@ -638,11 +638,6 @@ class WarehouseFinishGoodViewSet(GetModelViewSet):
     queryset = WarehouseType.objects.prefetch_related(
         Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('process__process_type','process__product').select_related('product__customer','product__type'))).filter(Q(id=1))
 
-class WarehouseScrapMaterialViewSet():
-    '''
-    class for warehouse scrap material
-    '''
-    pass
 
 
 class WarehouseSubcontViewSet(GetModelViewSet):

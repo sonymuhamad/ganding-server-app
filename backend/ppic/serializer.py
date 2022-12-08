@@ -2,7 +2,7 @@ from rest_framework.serializers import ModelSerializer,StringRelatedField,Valida
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 from purchasing.models import Supplier
-from django.db.models import Q,Prefetch,Count
+from django.db.models import Q,Prefetch
 from math import ceil
 from .models import *
 from marketing.models import Customer
@@ -761,6 +761,7 @@ class ConversionMaterialReportReadOnlySerializer(ModelSerializer):
 
 class ConversionMaterialReportManagementSerializer(ModelSerializer):
     
+
     def validate(self, attrs):
         '''
         validasi untuk kecukupan material
@@ -769,12 +770,12 @@ class ConversionMaterialReportManagementSerializer(ModelSerializer):
         output = attrs['material_output']
         uoms = BasedConversionMaterial.objects.filter(Q(material_input = input) & Q(material_output = output)).first()
         if uoms is None:
-            raise ValidationError('Tidak ada data konversi pada kedua material tersebut')
+            invalid('There is no data conversion material on those material')
         
         used_material = (attrs['quantity_output'] / uoms.quantity_output) * uoms.quantity_input
         stok = input.warehousematerial.quantity
         if used_material > stok:
-            raise ValidationError(f'Stok material {input.name} tidak cukup')
+            invalid(f'Insufficient stock material {input.name}')
         
         return super().validate(attrs)
     
@@ -785,25 +786,15 @@ class ConversionMaterialReportManagementSerializer(ModelSerializer):
         uoms = BasedConversionMaterial.objects.get(material_input = input, material_output=output)
         used_material = (validated_data['quantity_output'] / uoms.quantity_output) * uoms.quantity_input
         
-        rest_material = ceil(used_material) - used_material
-
-        if rest_material > 0:
-            wh_scrap = WarehouseScrapMaterial.objects.filter(material=input).first()
-            if wh_scrap is None:
-                WarehouseScrapMaterial.objects.create(quantity = rest_material, material = input)
-            else:
-                wh_scrap.quantity += rest_material
-                wh_scrap.save()
-        
         wh_material_input = input.warehousematerial
-        wh_material_input.quantity -= ceil(used_material)
+        wh_material_input.quantity -= used_material
         wh_material_input.save()
 
         wh_material_output = output.warehousematerial
         wh_material_output.quantity += validated_data['quantity_output']
         wh_material_output.save()
 
-        validated_data['quantity_input'] = ceil(used_material)
+        validated_data['quantity_input'] = used_material
 
         return super().create(validated_data)
 
@@ -893,26 +884,21 @@ class MrpManagementSerializer(ModelSerializer):
         fields = ['id','quantity','material','detailmrp_set']
 
 class WarehouseMaterialManagementSerializer(ModelSerializer):
+    
+    def validate_quantity(self,attrs):
+        if attrs < 0:
+            invalid('Cannot set stock material to negative number')
+        return attrs
+
     class Meta:
         model = WarehouseMaterial
         fields = '__all__'
-        read_only_fields = ['id','material']
+        read_only_fields = ['material']
 
 class WarehouseMaterialReadOnlySerializer(ModelSerializer):
     class Meta:
         model = WarehouseMaterial
         exclude = ['material']
-
-class WarehouseScrapReadOnlySerializer(ModelSerializer):
-    class Meta:
-        model = WarehouseScrapMaterial
-        fields = ['id','material','quantity']
-        depth = 2
-
-class WarehouseScrapManagementSerializer(ModelSerializer):
-    class Meta:
-        model = WarehouseScrapMaterial
-        fields = '__all__'
 
 class MaterialUomReadOnlySerializer(ModelSerializer):
     warehousematerial = WarehouseMaterialReadOnlySerializer()
@@ -1250,7 +1236,7 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
         for req_material in req_materials:
             wh_material = req_material.material.warehousematerial
             stock_in_wh = wh_material.quantity
-            used_material = ceil((production_quantity / req_material.output) * req_material.input)
+            used_material = (production_quantity / req_material.output) * req_material.input
             if used_material > stock_in_wh:
                 invalid(f'Jumlah stok {req_material.material.name} tidak cukup')
  
@@ -1344,15 +1330,8 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
             material = req_material.material
             wh_material = material.warehousematerial
             used_material = (quantity_delivery / req_material.output) * req_material.input
-            rest_material = ceil(used_material) - used_material
-            
-            if rest_material > 0:
 
-                obj,created = WarehouseScrapMaterial.objects.get_or_create(material=material)
-                obj.quantity += rest_material
-                obj.save()
-
-            wh_material.quantity -= ceil(used_material)
+            wh_material.quantity -= used_material
             updated['wh_material'].append(wh_material)
             inserted['req_material_subcont'].append(RequirementMaterialSubcont(quantity=used_material,material=material,product_subcont=productDeliverSubcont))
 
@@ -1490,38 +1469,18 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
             material = req_material.material
             wh_material = material.warehousematerial
             prev_used_material = (prev_quantity_delivery / req_material.output) * req_material.input
-            ceiled_prev_used_material = ceil(prev_used_material)
-            prev_rest_material = ceiled_prev_used_material - prev_used_material
 
             current_used_material = (quantity_delivery / req_material.output) * req_material.input
-            ceiled_current_used_material = ceil(current_used_material)
-            current_rest_material = ceiled_current_used_material - current_used_material
-
-
-            wh_material.quantity += ceiled_prev_used_material
-            wh_material.quantity -= ceiled_current_used_material
             
-            try:
-                obj = WarehouseScrapMaterial.objects.get(material=material)
-            except:
-                obj = WarehouseScrapMaterial.objects.create(material=material,quantity=0)
 
-            if current_rest_material > 0:
-                if prev_rest_material > 0:
-                    obj.quantity -= prev_rest_material
-                    obj.quantity += current_rest_material
-                else:
-                    obj.quantity += current_rest_material
-            else:
-                if prev_rest_material > 0:
-                    obj.quantity -= prev_rest_material
-            obj.save()
-
+            wh_material.quantity += prev_used_material
+            wh_material.quantity -= current_used_material
+            
             
             updated['wh_material'].append(wh_material)
 
             for report in material_reports.filter(material=material):
-                report.quantity = ceiled_current_used_material
+                report.quantity = current_used_material
                 updated['material_reports'].append(report)
                 
 
@@ -1615,7 +1574,7 @@ class ProductionReportManagementSerializer(ModelSerializer):
         for req_material in req_materials:
             wh_material = req_material.material.warehousematerial
             stock_in_wh = wh_material.quantity
-            used_material = ceil((production_quantity / req_material.output) * req_material.input)
+            used_material = (production_quantity / req_material.output) * req_material.input
             if used_material > stock_in_wh:
                 raise ValidationError(f'Jumlah stok {req_material.material.name} tidak cukup')
  
@@ -1716,15 +1675,8 @@ class ProductionReportManagementSerializer(ModelSerializer):
             material = req_material.material
             wh_material = material.warehousematerial
             used_material = (quantity_production / req_material.output) * req_material.input
-            rest_material = ceil(used_material) - used_material
-            
-            if rest_material > 0:
 
-                obj,created = WarehouseScrapMaterial.objects.get_or_create(material=material)
-                obj.quantity += rest_material
-                obj.save()
-
-            wh_material.quantity -= ceil(used_material)
+            wh_material.quantity -= used_material
             updated['wh_material'].append(wh_material)
             inserted['material_report'].append(MaterialProductionReport(quantity=used_material,material=material,production_report=production_report))
 
@@ -1859,38 +1811,16 @@ class ProductionReportManagementSerializer(ModelSerializer):
             material = req_material.material
             wh_material = material.warehousematerial
             prev_used_material = (prev_quantity_production / req_material.output) * req_material.input
-            ceiled_prev_used_material = ceil(prev_used_material)
-            prev_rest_material = ceiled_prev_used_material - prev_used_material
-
-            current_used_material = (quantity_production / req_material.output) * req_material.input
-            ceiled_current_used_material = ceil(current_used_material)
-            current_rest_material = ceiled_current_used_material - current_used_material
-
-
-            wh_material.quantity += ceiled_prev_used_material
-            wh_material.quantity -= ceiled_current_used_material
             
-            try:
-                obj = WarehouseScrapMaterial.objects.get(material=material)
-            except:
-                obj = WarehouseScrapMaterial.objects.create(material=material,quantity=0)
+            current_used_material = (quantity_production / req_material.output) * req_material.input
 
-            if current_rest_material > 0:
-                if prev_rest_material > 0:
-                    obj.quantity -= prev_rest_material
-                    obj.quantity += current_rest_material
-                else:
-                    obj.quantity += current_rest_material
-            else:
-                if prev_rest_material > 0:
-                    obj.quantity -= prev_rest_material
-            obj.save()
-
+            wh_material.quantity += prev_used_material
+            wh_material.quantity -= current_used_material
             
             updated['wh_material'].append(wh_material)
 
             for report in material_reports.filter(material=material):
-                report.quantity = ceiled_current_used_material
+                report.quantity = current_used_material
                 updated['material_reports'].append(report)
                 
 

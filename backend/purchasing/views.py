@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from .serializer import *
 
 from ppic.models import *
+from .permissions import PurchasingPermission,CanManagePurchaseOrderMaterial,CanManageSupplier
 
 from .models import Supplier,PurchaseOrderMaterial
 from manager.shortcuts import invalid
@@ -54,13 +55,13 @@ def validate_po(queryset):
         queryset_mo = po.materialorder_set.all() 
         validate_mo(queryset_mo)
 
-
-class SupplierManagementViewSet(ModelViewSet):
+class SupplierManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a viewset for cud supplier
+    '''
+    permission_classes = [PurchasingPermission,CanManageSupplier]
     serializer_class = BaseSupplierSerializer
-    queryset = Supplier.objects.annotate(number_of_material=Count(
-        'ppic_materials',distinct=True)).annotate(number_of_purchase_order=Count(
-            'purchasing_purchaseordermaterials',distinct=True))
-
+    queryset = Supplier.objects.all()
 
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']
@@ -85,11 +86,18 @@ class SupplierManagementViewSet(ModelViewSet):
 
         return super().destroy(request, *args, **kwargs)
 
+class SupplierViewSet(ReadOnlyModelViewSet):
+    permission_classes = [PurchasingPermission]
+    serializer_class = BaseSupplierSerializer
+    queryset = Supplier.objects.annotate(number_of_material=Count(
+        'ppic_materials',distinct=True)).annotate(number_of_purchase_order=Count(
+            'purchasing_purchaseordermaterials',distinct=True))
 
 class SupplierReadOnlyViewSet(RetrieveModelViewSet):
     '''
     a viewset for retrieve detail supplier nested to material, purchase order -> material order
     '''
+    permission_classes = [PurchasingPermission]
     serializer_class = SupplierReadOnlySerializer
     queryset = Supplier.objects.prefetch_related(Prefetch(
         'ppic_material_related',queryset=Material.objects.select_related('uom','supplier','warehousematerial')),Prefetch(
@@ -100,6 +108,7 @@ class MaterialUsageAndOrderViewSet(ReadOnlyModelViewSet):
     '''
     a viewset for get all usage material on each month, and order material on each month
     '''
+    permission_classes = [PurchasingPermission]
     serializer_class = MaterialUsageAndOrderSerializer
     
     ## queryset provided data all order through year->month
@@ -232,6 +241,7 @@ class MaterialUsageAndOrderViewSet(ReadOnlyModelViewSet):
         return self.generate_data_and_return(startDate,endDate,queryset_order,queryset_production)
 
 class PurchaseOrderReadOnlyViewSet(ReadOnlyModelViewSet):
+    permission_classes = [PurchasingPermission]
     serializer_class = PurchaseOrderReadOnlySerializer
     queryset = PurchaseOrderMaterial.objects.prefetch_related(
             Prefetch('materialorder_set',queryset=MaterialOrder.objects.select_related('material','purchase_order_material','material__supplier','material__uom','purchase_order_material__supplier'))).select_related('supplier')
@@ -241,6 +251,7 @@ class MaterialReceiptScheduleReadOnlyViewSet(RetrieveModelViewSet):
     '''
     a viewset for get all schedule based on its purchase order material, for detail po page
     '''
+    permission_classes = [PurchasingPermission]
     serializer_class = MaterialReceiptScheduleReadOnlySerializer
     queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__purchase_order_material','material_order__material','material_order__purchase_order_material__supplier','material_order__material__supplier','material_order__material__uom')
 
@@ -257,11 +268,16 @@ class StatusPurchaseOrderManagementViewSet(UpdateModelViewSet):
     '''
     a viewset to just update status of purchase order material
     '''
+    permission_classes = [PurchasingPermission,CanManagePurchaseOrderMaterial]
     serializer_class = StatusPurchaseOrderManagementSerializer
     queryset = PurchaseOrderMaterial.objects.prefetch_related('materialorder_set')
 
 
 class PurchaseOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a viewset for cud purchase order
+    '''
+    permission_classes = [PurchasingPermission,CanManagePurchaseOrderMaterial]
     serializer_class = PurchaseOrderManagementSerializer
 
     queryset = PurchaseOrderMaterial.objects.select_related('supplier')
@@ -283,6 +299,7 @@ class MaterialReceiptScheduleManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
     a viewset for management material receipt schedule
     '''
+    permission_classes = [PurchasingPermission,CanManagePurchaseOrderMaterial]
     serializer_class = MaterialReceiptScheduleManagementSerializer
     queryset = MaterialReceiptSchedule.objects.select_related('material_order')
 
@@ -299,6 +316,7 @@ class MaterialOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
     a viewset for cud material order
     '''
+    permission_classes = [PurchasingPermission,CanManagePurchaseOrderMaterial]
     serializer_class = MaterialOrderManagementSerializer
     queryset = MaterialOrder.objects.select_related('purchase_order_material','material')
 
@@ -317,6 +335,7 @@ class MaterialListViewSet(RetrieveModelViewSet):
     '''
     a viewset for retrieve queryset of material, based on particular supplier
     '''
+    permission_classes = [PurchasingPermission]
     serializer_class = MaterialListSerializer
     queryset = Material.objects.select_related('supplier','uom')
 
@@ -333,6 +352,7 @@ class MaterialReceiptListViewSet(ReadOnlyModelViewSet):
     '''
     a viewset for retrieve queryset of material receipt, based on particular purchase order
     '''
+    permission_classes = [PurchasingPermission]
     serializer_class = MaterialReceiptListSerializer
     queryset = MaterialReceipt.objects.select_related('delivery_note_material','material_order','delivery_note_material__supplier','material_order__material','material_order__purchase_order_material','material_order__purchase_order_material__supplier','material_order__material__uom','material_order__material__supplier','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material').order_by('delivery_note_material__date')
 

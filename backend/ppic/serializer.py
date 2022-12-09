@@ -930,6 +930,13 @@ class WarehouseProductManagementSerializer(ModelSerializer):
     '''
     serializer for update stock product eg: wip,subcont,finishgood
     '''
+
+    def validate_quantity(self,attrs):
+        if attrs < 0 :
+            invalid('Cannot set stock to negative number')
+            
+        return attrs
+
     class Meta:
         model = WarehouseProduct
         fields = '__all__'

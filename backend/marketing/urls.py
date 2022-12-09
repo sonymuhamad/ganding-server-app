@@ -1,6 +1,5 @@
 from rest_framework.routers import DefaultRouter
-from .views import CustomerViewset, PendingDeliveryNoteListViewSet, ProductCustomerViewSet,SalesOrderManagementViewSet,SalesOrderReadOnlyViewSet,DeliveryNoteReadOnlyViewSet,ProductDeliveryManagementSerializer,ProductOrderManagementViewSet,CustomerDetailReadOnlyViewSet,SalesOrderListReadOnlyViewSet,DeliveryNoteListViewSet,ProductDetailViewSet,SalesOrderListThisMonthViewSet
-
+from .views import *
 from django.urls import path,include
 
 router = DefaultRouter()
@@ -10,11 +9,14 @@ put_product_delivery_management = ProductDeliveryManagementSerializer.as_view({
 })
 
 router.register(r'customer',CustomerViewset,basename='customer')
+router.register(r'customer-management',CustomerManagementViewSet,basename='customer-management') ######
 router.register(r'customer-detail',CustomerDetailReadOnlyViewSet,basename='detail-customer')
+
 router.register(r'delivery-note',DeliveryNoteReadOnlyViewSet,basename='delivery-note')
 router.register(r'data-sales-order',SalesOrderReadOnlyViewSet,basename='data-sales-order')
 router.register(r'sales-order-management',SalesOrderManagementViewSet,basename='sales-order-management')
 router.register(r'sales-order-list',SalesOrderListReadOnlyViewSet,basename='sales-order-list')
+
 router.register(r'product-order-management',ProductOrderManagementViewSet,basename='product-order-management')
 router.register(r'product-customer',ProductCustomerViewSet,basename='product-customer')
 router.register(r'delivery-notes',DeliveryNoteListViewSet,basename='delivery-notes')

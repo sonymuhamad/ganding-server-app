@@ -7,7 +7,7 @@ router = DefaultRouter()
 
 
 router.register(r'supplier',SupplierViewSet,basename='supplier')
-router.register(r'supplier-management',SupplierManagementViewSet,basename='supplier-management')  #####
+router.register(r'supplier-management',SupplierManagementViewSet,basename='supplier-management')  
 router.register(r'supplier-detail',SupplierReadOnlyViewSet,basename='supplier-detail')
 router.register(r'material-list',MaterialList,basename='material-list')
 

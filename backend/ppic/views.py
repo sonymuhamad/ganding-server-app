@@ -1,6 +1,5 @@
 from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet,UpdateModelViewSet,CreateModelViewSet,GetModelViewSet
 
-from rest_framework.serializers import ValidationError
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -99,10 +98,10 @@ class ProductTypeManagementViewSet(CreateUpdateDeleteModelViewSet):
         product_type = get_object_or_404(self.queryset,pk=pk)
 
         if product_type.product_set.exists():
-            raise ValidationError('There is still product with this type in database')
+            invalid('There is still product with this type in database')
 
         if product_type.id == 1 or product_type.id ==2:
-            raise ValidationError('It is forbidden to delete the main type of production on the system')
+            invalid('It is forbidden to delete the main type of production on the system')
 
         return super().destroy(request, *args, **kwargs)
 
@@ -129,10 +128,10 @@ class ProcessTypeManagementViewSet(CreateUpdateDeleteModelViewSet):
         process_type = get_object_or_404(self.queryset,pk=pk)
 
         if process_type.process_set.exists():
-            raise ValidationError('There is still process with this type in database')
+            invalid('There is still process with this type in database')
         
         if process_type.id == 2 or process_type.id == 1:
-            raise ValidationError("It is forbidden to delete the main production type on the system")
+            invalid("It is forbidden to delete the main production type on the system")
 
         return super().destroy(request, *args, **kwargs)
 
@@ -354,9 +353,9 @@ class MaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
         wh_material = instance.warehousematerial
 
         if len(req_material) > 0:
-            raise ValidationError('Tidak bisa menghapus data material yang menjadi kebutuhan produksi')
+            invalid('Cannot delete material that are still use in production')
         if wh_material.quantity > 0:
-            raise ValidationError('Tidak bisa menghapus data material yang memiliki stok di gudang')
+            invalid('Cannot delete material that still have stock in warehouse')
         return super().destroy(request, *args, **kwargs)
     
     def update(self, request, *args, **kwargs):
@@ -738,7 +737,7 @@ class UomManagementViewSet(CreateUpdateDeleteModelViewSet):
         uom = get_object_or_404(self.queryset,pk=pk)
 
         if uom.material_set.exists():
-            raise ValidationError('There is still material with this unit in database')
+            invalid('There is still material with this unit in database')
 
         return super().destroy(request, *args, **kwargs)
 

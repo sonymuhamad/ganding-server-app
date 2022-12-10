@@ -9,7 +9,7 @@ put_product_delivery_management = ProductDeliveryManagementSerializer.as_view({
 })
 
 router.register(r'customer',CustomerViewset,basename='customer')
-router.register(r'customer-management',CustomerManagementViewSet,basename='customer-management') ######
+router.register(r'customer-management',CustomerManagementViewSet,basename='customer-management') 
 router.register(r'customer-detail',CustomerDetailReadOnlyViewSet,basename='detail-customer')
 
 router.register(r'delivery-note',DeliveryNoteReadOnlyViewSet,basename='delivery-note')

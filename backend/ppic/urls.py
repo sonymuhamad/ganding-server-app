@@ -9,18 +9,18 @@ router = DefaultRouter()
 
 router.register(r'uom-management',UomManagementViewSet,basename='uom-management')
 router.register(r'machine',MachineViewSet,basename='machine') 
-router.register(r'machine-management',MachineManagementViewSet,basename='machine-management') #####
+router.register(r'machine-management',MachineManagementViewSet,basename='machine-management')
 router.register(r'operator',OperatorViewSet,basename='operator')
-router.register(r'operator-management',OperatorManagementViewSet,basename='operator-management') #####
+router.register(r'operator-management',OperatorManagementViewSet,basename='operator-management') 
 router.register(r'vehicle',VehicleViewSet,basename='vehicle')
-router.register(r'vehicle-management',VehicleManagementViewSet,basename='vehicle-management') #####
+router.register(r'vehicle-management',VehicleManagementViewSet,basename='vehicle-management') 
 router.register(r'driver',DriverViewSet,basename='driver')
-router.register(r'driver-management',DriverManagementViewSet,basename='driver-management') #####
+router.register(r'driver-management',DriverManagementViewSet,basename='driver-management') 
 
 router.register(r'product-type',ProductTypeViewSet,basename='product-type')
-router.register(r'product-type-management',ProductTypeManagementViewSet,basename='product-type-management') #####
+router.register(r'product-type-management',ProductTypeManagementViewSet,basename='product-type-management') 
 router.register(r'process-type',ProcessTypeViewSet,basename='process-type')
-router.register(r'process-type-management',ProcessTypeManagementViewSet,basename='process-type-management') #####
+router.register(r'process-type-management',ProcessTypeManagementViewSet,basename='process-type-management') 
 router.register(r'customer-lists',CustomerListViewSet,basename='customer-lists')
 router.register(r'product-lists',ProductListViewSet,basename='product-lists')
 router.register(r'material-lists',MaterialListViewSet,basename='material-lists')
@@ -35,7 +35,7 @@ router.register(r'requirement-product',RequirementProductViewSet,basename='requi
 router.register(r'requirement-material',RequirementMaterialViewSet,basename='requirement-material')
 router.register(r'supplier-material-list',MaterialSupplierReadOnlyViewSet,basename='supplier-material-list')
 router.register(r'material',MaterialViewSet,basename='material')
-router.register(r'material-management',MaterialManagementViewSet,basename='material-management')  #####
+router.register(r'material-management',MaterialManagementViewSet,basename='material-management')  
 router.register(r'material-detail',MaterialDetailViewSet,basename='material-detail')
 router.register(r'uom-list',UomListViewSet,basename='uom-list')
 

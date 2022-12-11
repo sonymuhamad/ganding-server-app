@@ -8,7 +8,8 @@ class ManagerPermission(BasePermission):
     message = 'access except from manager division is not allowed'
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_access_manager')
+        permissions = request.user.get_all_permissions()
+        return 'auth.can_access_manager' in permissions
 
 
 class CanManageUser(BasePermission):

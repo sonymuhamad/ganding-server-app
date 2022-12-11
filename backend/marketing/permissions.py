@@ -8,8 +8,8 @@ class MarketingPermission(BasePermission):
     message = 'access except from marketing division is not allowed'
 
     def has_permission(self, request, view):
-
-        return request.user.has_perm('can_access_marketing')
+        permissions = request.user.get_all_permissions()
+        return 'auth.can_access_marketing' in permissions
         
 class CanManageCustomer(BasePermission):
     '''

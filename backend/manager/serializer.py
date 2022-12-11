@@ -12,7 +12,7 @@ from purchasing.models import Supplier,PurchaseOrderMaterial
 class GroupSerializer(ModelSerializer):
     class Meta:
         model = Group
-        fields = ['name']
+        fields = ['id','name']
 
 class AccessTokenSerializer(ModelSerializer):
     class Meta:

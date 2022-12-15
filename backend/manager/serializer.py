@@ -1,15 +1,20 @@
-from rest_framework.serializers import ModelSerializer,StringRelatedField
+from rest_framework.serializers import ModelSerializer,StringRelatedField,IntegerField
 from oauth2_provider.models import AccessToken
-from django.contrib.auth.models import User,Group
+from django.contrib.auth.models import User,Group,Permission
 
 from ppic.models import MaterialRequirementPlanning,DetailMrp,Product,WarehouseProduct,Process,ProductOrder,Material,MaterialOrder,MaterialReceiptSchedule,DeliveryNoteCustomer,ProductDeliverCustomer
 
 from marketing.models import SalesOrder,Customer
 
 from purchasing.models import Supplier,PurchaseOrderMaterial
+from .shortcuts import invalid,get_default_password
+
 
 
 class GroupSerializer(ModelSerializer):
+    '''
+    a serializer for get nested groups from each user
+    '''
     class Meta:
         model = Group
         fields = ['id','name']
@@ -18,13 +23,6 @@ class AccessTokenSerializer(ModelSerializer):
     class Meta:
         model = AccessToken
         fields = ['token','expires','scope','created']
-
-class UserManagementSerializer(ModelSerializer):
-    groups = GroupSerializer(many=True)
-    
-    class Meta:
-        model = User
-        fields = ['username','last_login','email','groups'] 
     
 class UserSerializer(ModelSerializer):
     oauth2_provider_accesstoken = AccessTokenSerializer(many=True)
@@ -32,11 +30,73 @@ class UserSerializer(ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['last_login','username','email','oauth2_provider_accesstoken','groups']
+        fields = ['id','last_login','username','email','oauth2_provider_accesstoken','groups']
 
-'''
-serializer for material requirement planning
-'''
+class PermissionReadOnlySerializer(ModelSerializer):
+    '''
+    nested serializer for permission from user
+    '''
+    class Meta:
+        model = Permission
+        fields = '__all__'
+        depth = 1
+
+class UserReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer for get and retrieve user
+    '''
+    groups = GroupSerializer(many=True)
+    user_permissions = PermissionReadOnlySerializer(many=True)
+    class Meta:
+        model = User
+        fields = ['id','last_login','username','email','groups','user_permissions']
+
+
+class UserManagementSerializer(ModelSerializer):
+    '''
+    a serializer for management data user
+    '''
+
+    def create(self, validated_data):
+        password = get_default_password()
+        new_user = User.objects.create(username=validated_data['username'],password=password,email=validated_data['email'])
+
+        return new_user
+
+    class Meta:
+        model = User
+        fields = ['id','username','last_login','email'] 
+        read_only_fields = ['last_login']
+
+class UserGroupManagementSerializer(ModelSerializer):
+    '''
+    a serializer for add,and delete group from user
+    '''
+    class Meta:
+        model = Group
+        fields = '__all__'
+
+
+class UserListSerializer(ModelSerializer):
+    '''
+    a serializer for get just list of user
+    '''
+
+    class Meta:
+        model = User
+        fields = ['id','username','email','last_login']
+
+class GroupReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer for get nested groups from each user
+    '''
+    number_of_user = IntegerField(read_only=True)
+    user_set = UserListSerializer(many=True)
+    class Meta:
+        model = Group
+        fields = '__all__'
+
+
 
 class DetailMrpSerializer(ModelSerializer):
     

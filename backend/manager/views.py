@@ -1,28 +1,22 @@
-from oauth2_provider.models import AccessToken
-from datetime import datetime
-import requests
+
 from django.db import connection, reset_queries
 import time
 import functools
-from django.db.models import Prefetch
+from django.db.models import Prefetch,Count,Q
 
-from django.contrib.auth.models import User,update_last_login
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.models import User
 from rest_framework import response,status,permissions
-from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,CreateModelViewSet
+from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,GetModelViewSet,CreateUpdateDeleteModelViewSet,UpdateModelViewSet,RetrieveModelViewSet,CreateModelViewSet
 
 from marketing.models import Customer, SalesOrder
 from purchasing.models import Supplier,PurchaseOrderMaterial
-
-from .serializer import  UserSerializer,UserManagementSerializer,ReportMrpSerializer,SupplierSerializer,CustomerSalesOrderSerializer,CustomerDeliveryNoteSerializer
-from .forms import RegisterForm
+from .serializer import  *
+from .shortcuts import get_default_password,filter_helper_app_label,get_key
+from django.shortcuts import get_object_or_404
 
 from ppic.models import DeliveryNoteCustomer, DetailMrp, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,MaterialOrder, WarehouseProduct,Process
-from .permissions import ManagerPermission
+from .permissions import ManagerPermission,CanManageUser
 
-CLIENT_ID = '9IwGfEqtmqoIFcFSGz2C1kcX8zNmCVFczPNy0vgk'
-CLIENT_SECRET = 'PlPFwPLscJ6b4c71UUCc0CebfEZf89CJCQqHSWOA3IolreLNfSfjr8NZqCbPfqmQjacCbr30wmvIUIIrUFSYExxKsoSYcgi4B8L65aGMjsATaoPCL0PRD28oq1DtPUYs'
-URL = 'http://127.0.0.1:8000/o/token/'
 
 def queryDebug(func):
 
@@ -48,119 +42,52 @@ def queryDebug(func):
     return inner_func
 
 
-def deleteExpiredToken(function):
-    def inner_func(*args,**kwargs):
-        AccessToken.objects.filter(expires__lt=datetime.now()).delete()
-        
-        return function(*args,**kwargs)
-
-    return inner_func 
-
-class AuthViewSet(ModelViewSet):
-    
-    # class view for sign in or get authentication
-    
-    serializer_class = UserSerializer
-    permission_classes = [permissions.AllowAny] 
-    user = None
-    password = None
-
-    def username_check(self,username):
-        user = User.objects.filter(username=username).first()
-        self.user = user
-        return user
-
-    def password_check(self,password):
-        self.password = password
-        return check_password(password,self.user.password)
-    
-    def token_check(self):
-        access = self.user.oauth2_provider_accesstoken.first()
-        data = {
-            'grant_type':'password',
-            'username':self.user.username,
-            'password':self.password,
-            'client_id':CLIENT_ID,
-            'client_secret':CLIENT_SECRET,
-        }
-
-        if access:
-            return
-        r = requests.post(URL,data)
-        return
-
-    @deleteExpiredToken
-    def auth(self,request):
-        if self.username_check(request.data['username']):
-            
-            if self.password_check(request.data['password']):
-                self.token_check()
-                serializer = UserSerializer(self.user)
-                update_last_login('User',self.user)
-                return response.Response(serializer.data,status=status.HTTP_200_OK) 
-            return response.Response({'error':{'password':'invalid password'}},status=status.HTTP_400_BAD_REQUEST )
-
-        return response.Response({'error':{'username':'invalid username'}},status=status.HTTP_400_BAD_REQUEST )
-
-class LogoutViewSet(CreateModelViewSet):
+class UserManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
-    class for destroy authentication or sign out
-    '''
-    serializer_class = UserSerializer
-    permission_classes = [permissions.AllowAny]
-    
-    @deleteExpiredToken
-    def create(self,request):
-        token = request.data['access_token']
-        r = requests.post('http://127.0.0.1:8000/o/revoke_token/', data = {
-            'token':token,
-            'client_id':CLIENT_ID,
-            'client_secret':CLIENT_SECRET,},)
-
-        return response.Response({'revoke':'success','logout':'success'},status=status.HTTP_200_OK)
-
-
-class UserViewSet(ModelViewSet):
-    '''
-    for add new user `password is created by default so plant-manager just input username,email and pick group`
+    a viewset for cud user
     '''
     serializer_class = UserManagementSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [ManagerPermission,CanManageUser]
     queryset = User.objects.prefetch_related('groups')
 
-    def create(self, request, *args, **kwargs):
+    def destroy(self, request, *args, **kwargs):
+        
+        instance = self.get_object()
 
-        data = {
-            'username':request.data['username'],
-            'email':request.data['email'],
-            'password1':'gandingtoolsindo',
-            'password2':'gandingtoolsindo',
-            'group':request.data['group']
-        }
+        if instance.groups.exists():
+            invalid()
+        
+        self.perform_destroy(instance)
+        return response.Response(status=status.HTTP_204_NO_CONTENT)
+    
+    def partial_update(self, request, *args, **kwargs):
+        '''
+        a endpoint for reset password of user, PATCH METHOD
+        '''
+        instance = self.get_object()
+        password = get_default_password()
+        instance.password = password
+        serializer = self.get_serializer(instance)
+        return response.Response(serializer.data)
+    
+    
 
-        form = RegisterForm(data)
-
-        if form.is_valid():
-            respons = form.save()
-            return response.Response(respons,status=status.HTTP_201_CREATED)
-        return response.Response({'error':form.errors},status=status.HTTP_400_BAD_REQUEST)
-
-class ReportMrpViewSet(ModelViewSet):
+class ReportMrpViewSet(GetModelViewSet):
     '''
     plant manager -> material requirement planning report
     '''
     serializer_class = ReportMrpSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [ManagerPermission]
     queryset = MaterialRequirementPlanning.objects.select_related('material').prefetch_related(
         Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product')))
 
     
-class ReportSupplierPurchaseOrderViewSet(ModelViewSet):
+class ReportSupplierPurchaseOrderViewSet(GetModelViewSet):
     '''
     plant manager -> schedule material receipt report
     '''
     serializer_class = SupplierSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [ManagerPermission]
     queryset = Supplier.objects.prefetch_related(
         Prefetch('purchasing_purchaseordermaterial_related',queryset=PurchaseOrderMaterial.objects.prefetch_related(
             Prefetch('materialorder_set',queryset=MaterialOrder.objects.prefetch_related('materialreceiptschedule_set').select_related('material__uom')))))
@@ -171,7 +98,7 @@ class ReportCustomerSalesOrderViewSet(ReadOnlyModelViewSet):
     '''
     
     serializer_class = CustomerSalesOrderSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [ManagerPermission]
     queryset = Customer.objects.prefetch_related(
         Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related(
             Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related(
@@ -184,11 +111,195 @@ class ReportDeliveryNoteCustomerViewSet(ReadOnlyModelViewSet):
     plant manager -> sales report -> delivery note
     '''
     serializer_class = CustomerDeliveryNoteSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [ManagerPermission]
     queryset = Customer.objects.prefetch_related(
         Prefetch('ppic_deliverynotecustomer_related',queryset=DeliveryNoteCustomer.objects.prefetch_related(
             Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.prefetch_related(
                 Prefetch('product_order',queryset=ProductOrder.objects.select_related('product','sales_order'))))).select_related('driver','vehicle')))
 
     
+
+class UserReadOnlyViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for get and retrieve user nested to -> groups, permissions
+    '''
+    serializer_class = UserReadOnlySerializer
+    permission_classes = [ManagerPermission]
+    queryset = User.objects.prefetch_related('groups').prefetch_related(Prefetch('user_permissions',Permission.objects.select_related('content_type')))
+
+
+class GroupReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset for get list of groups
+    '''
+    serializer_class = GroupReadOnlySerializer
+    permission_classes = [ManagerPermission]
+    queryset = Group.objects.prefetch_related('user_set').annotate(number_of_user=Count('user')).order_by('-id')
+
+
+class UserGroupManagementAddViewSet(UpdateModelViewSet):
+    '''
+    a viewset for add group to each user (create())
+    '''
+    serializer_class = UserGroupManagementSerializer
+    permission_classes = [ManagerPermission,CanManageUser]
+    queryset = User.objects.prefetch_related('groups')
+    queryset_group = Group.objects.all()
+
+    def update(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance = get_object_or_404(self.queryset,pk=pk)
+        
+        id_group = request.data.get('group',None)
+        queryset_group_from_instance = instance.groups.all()
+
+        obj_group = get_object_or_404(self.queryset_group,pk=id_group)
+
+        if not queryset_group_from_instance.contains(obj_group):
+            instance.groups.add(obj_group)
+        
+        serializer = self.get_serializer(obj_group)
+
+        return response.Response(serializer.data,status=status.HTTP_200_OK)
+
+class UserGroupManagementDeleteViewSet(UpdateModelViewSet):
+    '''
+    a viewset for delete group from user
+    '''
+    serializer_class = UserGroupManagementSerializer
+    permission_classes = [ManagerPermission,CanManageUser]
+    queryset = User.objects.prefetch_related('groups')
+    queryset_group =  Group.objects.all()
+
+    def update(self, request, *args, **kwargs):
+
+        pk = kwargs['pk']
+        instance = get_object_or_404(self.queryset,pk=pk)
+        
+        id_group = request.data.get('group',None)
+        
+        queryset_group_from_instance = instance.groups.all()
+        if queryset_group_from_instance.count() == 1:
+            invalid('Cannot perform remove division from user, because user at least have one division')
+        
+        obj_group = get_object_or_404(self.queryset_group,pk=id_group)
+        
+        if queryset_group_from_instance.contains(obj_group):
+            instance.groups.remove(obj_group)
+        
+        app_label = get_key(obj_group.name)
+        permission_have_to_delete = instance.user_permissions.filter(content_type__app_label=app_label)
+        
+        for i in permission_have_to_delete:
+            instance.user_permissions.remove(i)
+
+        serializer = self.get_serializer(obj_group)
+
+        return response.Response(serializer.data,status=status.HTTP_200_OK) 
+
+
+class PermissionListReadOnlyViewSet(RetrieveModelViewSet):
+    '''
+    a viewset for get permission list that can be granted to the associated user
+    '''
+    serializer_class = PermissionReadOnlySerializer
+    queryset = Permission.objects.all()
+    permission_classes = [ManagerPermission]
+    queryset_user = User.objects.prefetch_related('user_permissions','groups')
+    filter_helper = {
+        1:'marketing',
+        2:'purchasing',
+        3:'ppic',
+        4:'auth'
+    }
+
+    def retrieve(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        temp_storage_permissions = []
+        obj_user = get_object_or_404(self.queryset_user,pk=pk)
+        queryset_permissions_from_user = obj_user.user_permissions.all()
+
+        for group in obj_user.groups.all():
+            app_label_from_group = self.filter_helper[group.id]
+            ## get app label from helper, based on its group
+
+            queryset_permission = Permission.objects.select_related('content_type').filter(Q(codename__startswith='can_manage')&Q(content_type__app_label=app_label_from_group))
+
+            for obj_permission in queryset_permission:
+                if not queryset_permissions_from_user.contains(obj_permission):
+                    temp_storage_permissions.append(obj_permission)
+
+        
+        serializer = self.get_serializer(temp_storage_permissions, many=True)
+        return response.Response(serializer.data)
+
+
+class UserPermissionAddManagementViewSet(UpdateModelViewSet):
+    '''
+    a viewset for add permission to user, based on its group
+    '''
+    serializer_class = PermissionReadOnlySerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Permission.objects.select_related('content_type')
+    queryset_user = User.objects.prefetch_related('groups','user_permissions')
+    
+
+    def update(self, request, *args, **kwargs):
+
+        pk = kwargs['pk']
+        obj_user = get_object_or_404(self.queryset_user,pk=pk)
+        id_permission = request.data.get('id_permission',None)
+
+        obj_permission = get_object_or_404(self.queryset,pk=id_permission)
+        serializer = self.get_serializer(obj_permission)
+
+        if not obj_user.user_permissions.contains(obj_permission):
+            
+            group_name_from_app_label = filter_helper_app_label[obj_permission.content_type.app_label]
+            if not obj_user.groups.filter(name=group_name_from_app_label).exists():
+                ## if user doesn't have group related to this permission
+                
+                invalid('Error while perform granting permission access')
+
+            obj_user.user_permissions.add(obj_permission)
+
+        return response.Response(serializer.data)
+
+
+class UserPermissionDeleteManagementViewSet(UpdateModelViewSet):
+    '''
+    a viewset for delete permission acces from user
+    '''
+    serializer_class = PermissionReadOnlySerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Permission.objects.select_related('content_type')
+    queryset_user = User.objects.prefetch_related('groups','user_permissions')
+    filter_helper_app_label = {
+        'auth':'plant-manager',
+        'ppic':'ppic',
+        'purchasing':'purchasing',
+        'marketing':'marketing'
+    }
+
+    def update(self, request, *args, **kwargs):
+
+        pk = kwargs['pk']
+        obj_user = get_object_or_404(self.queryset_user,pk=pk)
+
+        id_permission = request.data.get('id_permission')
+        obj_permission = get_object_or_404(self.queryset,pk=id_permission)
+        serializer = self.get_serializer(obj_permission)
+
+
+        if obj_user.user_permissions.contains(obj_permission):
+            obj_user.user_permissions.remove(obj_permission)
+
+        return response.Response(serializer.data)
+
+
+
+
+
+
+
 

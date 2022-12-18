@@ -21,7 +21,7 @@ class CanManageProduct(BasePermission):
 
     def has_permission(self, request, view):
         
-        return request.user.has_perm('can_manage_product')
+        return request.user.has_perm('ppic.can_manage_product')
 
 class CanManageMaterial(BasePermission):
     '''
@@ -30,7 +30,7 @@ class CanManageMaterial(BasePermission):
     message = get_error_message('materials')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_material')
+        return request.user.has_perm('ppic.can_manage_material')
 
 class CanManageProduction(BasePermission):
     '''
@@ -40,7 +40,7 @@ class CanManageProduction(BasePermission):
     message = get_error_message('production')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_production')
+        return request.user.has_perm('ppic.can_manage_production')
 
 
 class CanManageDelivery(BasePermission):
@@ -51,7 +51,7 @@ class CanManageDelivery(BasePermission):
     message = get_error_message('delivery')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_delivery')
+        return request.user.has_perm('ppic.can_manage_delivery')
 
 class CanManageWarehouse(BasePermission):
     '''
@@ -60,7 +60,7 @@ class CanManageWarehouse(BasePermission):
     message = get_error_message('warehouse')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_warehouse')
+        return request.user.has_perm('ppic.can_manage_warehouse')
 
 
 

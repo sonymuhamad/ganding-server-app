@@ -27,6 +27,20 @@ router.register(r'report-salesorder',ReportCustomerSalesOrderViewSet,basename='r
 router.register(r'report-mrp',ReportMrpViewSet)
 router.register(r'report-purchaseorder',ReportSupplierPurchaseOrderViewSet)
 
+router.register(r'report-sales-order',ReportProductOrderReadOnlyViewSet,basename='report-sales-order')
+router.register(r'report-customer-product-order',ReportCustomerAndOrderedProductViewSet,basename='report-customer-product-order')
+router.register(r'report-timeliness-delivery',ReportPresentageDeliveryTimeLinessReadOnlyViewSet,basename='report-timeliness-delivery')
+router.register(r'report-product-in-progress',ReportProductInProgressReadOnlyViewSet,basename='report-product-in-progress')
+router.register(r'product-delivery-list',ReportProductDeliverCustomerReadOnlyViewSet,basename='product-delivery-list')
+
+
+router.register(r'report-purchase-order',ReportMaterialOrderReadOnlyViewSet,basename='report-purchase-order')
+router.register(r'material-order-list',MaterialOrderListReadOnlyViewSet,basename='material-order-list')
+router.register(r'report-timeliness-receipt',ReportPresentageTimeLinessMaterialOrder,basename='report-timeliness-receipt')
+router.register(r'material-receipt-list',MaterialReceiptListReadOnlyViewSet,basename='material-receipt-list')
+router.register(r'report-supplier-material-order',ReportSupplierOrderReadOnlyViewSet,basename='report-supplier-material-order')
+
+
 urlpatterns = [
     path('',include(router.urls)),
     path('sign-in/',auth_list,name='auth'),  

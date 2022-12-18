@@ -1,8 +1,7 @@
-
 from django.db import connection, reset_queries
 import time
 import functools
-from django.db.models import Prefetch,Count,Q
+from django.db.models import Prefetch,Count,Q,Sum,F
 
 from django.contrib.auth.models import User
 from rest_framework import response,status,permissions
@@ -14,9 +13,12 @@ from .serializer import  *
 from .shortcuts import get_default_password,filter_helper_app_label,get_key
 from django.shortcuts import get_object_or_404
 
-from ppic.models import DeliveryNoteCustomer, DetailMrp, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,MaterialOrder, WarehouseProduct,Process
+from ppic.models import DeliveryNoteCustomer, DetailMrp, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,MaterialOrder, WarehouseProduct,Process,MaterialReceipt,SubcontReceipt
 from .permissions import ManagerPermission,CanManageUser
+from datetime import date
+from dateutil import rrule
 
+from ppic.serializer import ProductOrderListSerializer,ProductDeliverCustomerReadOnlySerializer,MaterialOrderReadOnlySerializer,MaterialReceiptReadOnlySerializer
 
 def queryDebug(func):
 
@@ -239,7 +241,7 @@ class UserPermissionAddManagementViewSet(UpdateModelViewSet):
     a viewset for add permission to user, based on its group
     '''
     serializer_class = PermissionReadOnlySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [ManagerPermission,CanManageUser]
     queryset = Permission.objects.select_related('content_type')
     queryset_user = User.objects.prefetch_related('groups','user_permissions')
     
@@ -271,7 +273,7 @@ class UserPermissionDeleteManagementViewSet(UpdateModelViewSet):
     a viewset for delete permission acces from user
     '''
     serializer_class = PermissionReadOnlySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [ManagerPermission,CanManageUser]
     queryset = Permission.objects.select_related('content_type')
     queryset_user = User.objects.prefetch_related('groups','user_permissions')
     filter_helper_app_label = {
@@ -295,6 +297,297 @@ class UserPermissionDeleteManagementViewSet(UpdateModelViewSet):
             obj_user.user_permissions.remove(obj_permission)
 
         return response.Response(serializer.data)
+
+
+class ReportProductOrderReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset provide report of total product ordered each month
+    '''
+    permission_classes = [ManagerPermission]
+    serializer_class = ReportOrderEachMonthReadOnlySerializer
+    queryset = ProductOrder.objects.filter(Q(sales_order__done=True)|Q(sales_order__fixed=True),sales_order__date__lte=date.today()).values('sales_order__date__year','sales_order__date__month').annotate(total_order=Sum('ordered')).order_by('sales_order__date__year','sales_order__date__month')
+
+    def generate_date_from_queryset(self) -> dict:
+
+        store_data = {}
+
+        for data in self.queryset:
+            year = data['sales_order__date__year']
+            month = data['sales_order__date__month']
+            store_data[date(year,month,1)] = data['total_order']
+        
+        return store_data
+
+    def list(self, request, *args, **kwargs):
+
+        first_monthly_order = self.queryset.first()
+        last_monthly_order = self.queryset.last()
+        data_report = []
+
+        
+        if self.queryset.count() > 0:
+            generated_data = self.generate_date_from_queryset()
+
+            first_year = first_monthly_order['sales_order__date__year']
+            first_month = first_monthly_order['sales_order__date__month']
+
+            last_year = last_monthly_order['sales_order__date__year']
+            last_month = last_monthly_order['sales_order__date__month']
+
+            first_date = date(first_year,first_month,1)
+            last_date = date(last_year,last_month,1)
+
+            for dt in rrule.rrule(rrule.MONTHLY,dtstart=first_date,until=last_date):
+                current_date = date(dt.year,dt.month,1)
+                current_total_order = generated_data.get(current_date,0)
+                data_report.append({
+                    'order_date':current_date,
+                    'total_order':current_total_order
+                })
+
+        serializer = self.get_serializer(data_report,many=True)
+        return response.Response(serializer.data)
+
+
+class ReportCustomerAndOrderedProductViewSet(GetModelViewSet):
+    '''
+    a viewset for get all customer and its total product order, and most ordered product
+    '''
+    permission_classes = [ManagerPermission]
+    serializer_class = ReportCustomerOrderReadOnlySerializer
+    queryset = Customer.objects.annotate(customer_total_order=Sum('ppic_products__ppic_productorders__ordered',filter=Q(ppic_products__ppic_productorders__sales_order__fixed=True),default=0)).prefetch_related(Prefetch('ppic_product_related',queryset=Product.objects.select_related('customer','type').annotate(total_order=Sum('ppic_productorders__ordered',filter=Q(ppic_productorders__sales_order__fixed=True),default=0)).order_by('-total_order'))).order_by('-customer_total_order')
+
+    def generate_data_from_queryset(self):
+
+        data = []
+
+        for cust in self.queryset:
+            most_ordered_product = cust.ppic_product_related.first()
+            temp_data = {
+                'id':cust.pk,
+                'name':cust.name,
+                'email':cust.email,
+                'phone':cust.phone,
+                'address':cust.address,
+                'customer_total_order':cust.customer_total_order,
+                'most_ordered_product':most_ordered_product
+            }
+            data.append(temp_data)
+
+        return data
+
+    def list(self, request, *args, **kwargs):
+
+        validate_data = self.generate_data_from_queryset()
+
+        serializer = self.get_serializer(validate_data,many=True)
+        return response.Response(serializer.data)
+
+
+
+class ReportPresentageDeliveryTimeLinessReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset for get presentage of delivery timeliness
+    '''
+    permission_classes = [ManagerPermission]
+    serializer_class = PercentageSerializer
+    queryset = ProductDeliverCustomer.objects.all()
+
+    def list(self, request, *args, **kwargs):
+        
+        percentage = 100
+        total_delivery = self.queryset.count()
+        total_delivery_in_schedule = self.queryset.filter(schedules__isnull=False).count()
+        total_on_time_delivery = self.queryset.filter(Q(schedules__isnull=False)&Q(schedules__date__gte=F('delivery_note_customer__date'))).count()
+        
+
+        unscheduled_delivery = total_delivery - total_delivery_in_schedule
+
+        if total_delivery_in_schedule > 0:
+            percentage = (total_on_time_delivery / total_delivery_in_schedule) * 100 
+
+        data = {
+            'percentage':percentage,
+            'total_schedule': total_delivery_in_schedule,
+            'total_schedule_on_time':total_on_time_delivery,
+            'unscheduled':unscheduled_delivery
+        }
+
+        serializer = self.get_serializer(data)
+        return response.Response(serializer.data)
+
+
+class ReportProductInProgressReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset for get list of product in order
+    '''
+    permission_classes = [ManagerPermission]
+    serializer_class = ProductOrderListSerializer
+    queryset = ProductOrder.objects.filter(Q(done=False),Q(sales_order__fixed=True)&Q(sales_order__done=False)).order_by('pk')
+
+
+class ReportProductDeliverCustomerReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset for get list of product delivery and show its timeliness on react (frontend)
+    '''
+    permission_classes = [ManagerPermission]
+    serializer_class = ProductDeliverCustomerReadOnlySerializer
+    queryset = ProductDeliverCustomer.objects.select_related('delivery_note_customer','product_order','delivery_note_customer__customer','delivery_note_customer__vehicle','delivery_note_customer__driver','product_order__product','product_order__sales_order','schedules','schedules__product_order')
+
+
+
+class ReportMaterialOrderReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset for get report of order of material each month
+    '''
+    permission_classes = [ManagerPermission]
+    serializer_class = ReportOrderEachMonthReadOnlySerializer
+    queryset = MaterialOrder.objects.values('purchase_order_material__date__year','purchase_order_material__date__month').annotate(total_order=Sum('ordered')).order_by('purchase_order_material__date__year','purchase_order_material__date__month')
+    storage_data = {}
+    final_data = []
+
+    def generate_from_queryset(self):
+
+        for data in self.queryset:
+            year = data['purchase_order_material__date__year']
+            month = data['purchase_order_material__date__month']
+            self.storage_data[date(year,month,1)] = data['total_order'] 
+
+        return
+
+
+    def list(self, request, *args, **kwargs):
+        
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        first_data = queryset.first()
+        first_year = first_data['purchase_order_material__date__year']
+        first_month = first_data['purchase_order_material__date__month']
+        
+        last_data = queryset.last()
+        last_year = last_data['purchase_order_material__date__year']
+        last_month = last_data['purchase_order_material__date__month']
+
+        if queryset.count() > 0:
+            self.generate_from_queryset()
+
+            first_date = date(first_year,first_month,1)
+            last_date = date(last_year,last_month,1)
+
+            for dt in rrule.rrule(rrule.MONTHLY,dtstart=first_date,until=last_date):
+                current_date = date(dt.year,dt.month,1)
+                current_total_order = self.storage_data.get(current_date,0)
+                
+                self.final_data.append({
+                    'order_date':current_date,
+                    'total_order':current_total_order
+                })
+
+        serializer = self.get_serializer(self.final_data,many=True)
+        return response.Response(serializer.data)
+
+
+class MaterialOrderListReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset class for get all upcoming materials
+    '''
+    serializer_class = MaterialOrderReadOnlySerializer
+    permission_classes = [ManagerPermission]
+    queryset = MaterialOrder.objects.filter(Q(arrived__lt=F('ordered')))
+
+
+class ReportPresentageTimeLinessMaterialOrder(GetModelViewSet):
+    '''
+    a viewset class for get presentage of timeliness of material received
+    '''
+    serializer_class = PercentageSerializer
+    permission_classes = [ManagerPermission]
+    queryset = MaterialReceipt.objects.all()
+    queryset_subcont_receipt = SubcontReceipt.objects.all()
+    
+    def list(self, request, *args, **kwargs):
+        
+        percentage = 100
+        total_material_receipt = self.queryset.count()
+        total_material_receipt_in_schedule = self.queryset.filter(schedules__isnull=False).count()
+        total_material_receipt_on_time = self.queryset.filter(Q(schedules__isnull=False)&Q(schedules__date__gte=F('delivery_note_material__date'))).count()
+
+        total_subcont_receipt = self.queryset_subcont_receipt.count()
+        total_subcont_receipt_in_schedule = self.queryset_subcont_receipt.filter(schedules__isnull=False).count()
+        total_subcont_receipt_on_time = self.queryset_subcont_receipt.filter(Q(schedules__isnull=False)&Q(schedules__date__gte=F('receipt_note__date'))).count()
+
+        
+        total_count_receipt_on_schedule = total_material_receipt_in_schedule + total_subcont_receipt_in_schedule
+        total_receipt = total_material_receipt + total_subcont_receipt
+        total_on_time = total_material_receipt_on_time + total_subcont_receipt_on_time
+        unscheduled_receipt = total_receipt - total_count_receipt_on_schedule
+
+        if total_material_receipt_in_schedule > 0 or total_subcont_receipt_in_schedule > 0:
+
+            percentage = (total_on_time / total_count_receipt_on_schedule) * 100 
+
+        data = {
+            'percentage':percentage,
+            'total_schedule':total_count_receipt_on_schedule,
+            'total_schedule_on_time':total_on_time,
+            'unscheduled':unscheduled_receipt
+            }
+
+        serializer = self.get_serializer(data)
+        return response.Response(serializer.data)
+
+
+class MaterialReceiptListReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset for get a list of material received    
+    '''
+    serializer_class = MaterialReceiptReadOnlySerializer
+    permission_classes = [ManagerPermission]
+    queryset = MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier','delivery_note_material','delivery_note_material__supplier')
+
+
+class ReportSupplierOrderReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset for get list of supplier, and its total material order and the most ordered material, then sort by total material order
+    '''
+    serializer_class = ReportSupplierOrderReadOnlySerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Supplier.objects.annotate(supplier_total_order=Sum('ppic_materials__ppic_materialorders__ordered',default=0)).prefetch_related(
+        Prefetch('ppic_material_related',queryset=Material.objects.select_related('uom','supplier').annotate(total_order=Sum('ppic_materialorders__ordered',default=0)).order_by('-total_order'))).order_by('-supplier_total_order')
+
+    result_data = []
+
+
+    def return_serializer(self):
+        serializer = self.get_serializer(self.result_data,many=True)
+
+        return response.Response(serializer.data)
+
+    def generate_data_from_queryset(self):
+      
+        for supp in self.queryset:
+            most_ordered_material = supp.ppic_material_related.first()
+            
+            temp_data = {
+                "id" : supp.pk,
+                "name":supp.name,
+                "email":supp.email,
+                "phone":supp.phone,
+                "address":supp.address,
+                "supplier_total_order":supp.supplier_total_order,
+                "most_ordered_material":most_ordered_material
+            }
+
+            self.result_data.append(temp_data)
+
+        return self.return_serializer()
+
+    def list(self, request, *args, **kwargs):
+
+        return self.generate_data_from_queryset()
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-from rest_framework.serializers import ModelSerializer,StringRelatedField,IntegerField
+from rest_framework.serializers import ModelSerializer,StringRelatedField,IntegerField,Serializer,DateField
 from oauth2_provider.models import AccessToken
 from django.contrib.auth.models import User,Group,Permission
 
@@ -8,6 +8,7 @@ from marketing.models import SalesOrder,Customer
 
 from purchasing.models import Supplier,PurchaseOrderMaterial
 from .shortcuts import invalid,get_default_password
+from ppic.serializer import ProductListSerializer,MaterialListReadOnlySerializer
 
 
 
@@ -237,12 +238,43 @@ class CustomerDeliveryNoteSerializer(ModelSerializer):
 
 
 
+class ReportOrderEachMonthReadOnlySerializer(Serializer):
+    '''
+    a serializer class for get total quantity order of all product each month
+    '''
+    order_date = DateField()
+    total_order = IntegerField()
+
+class ReportCustomerOrderReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer class for get all customer and its total product order, and what is the most ordered product,
+    sort by total product order
+    '''
+    customer_total_order = IntegerField()
+    most_ordered_product = ProductListSerializer(read_only=True)
+    class Meta:
+        model = Customer
+        fields = '__all__'
 
 
+class PercentageSerializer(Serializer):
+    '''
+    a serialzier class for get presentage of delivery timeliness
+    ''' 
+    percentage = IntegerField()
+    total_schedule = IntegerField()
+    total_schedule_on_time = IntegerField()
+    unscheduled = IntegerField()
 
-
-
-
-
+class ReportSupplierOrderReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer class for get all supplier and its total material order, and what is the most ordered material, then sort by total material order
+    '''
+    supplier_total_order = IntegerField()
+    most_ordered_material = MaterialListReadOnlySerializer(read_only=True)
+    
+    class Meta:
+        model = Supplier
+        fields = '__all__'
 
 

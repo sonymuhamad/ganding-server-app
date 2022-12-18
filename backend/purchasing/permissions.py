@@ -19,7 +19,7 @@ class CanManageSupplier(BasePermission):
     message = get_error_message('supplier')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_supplier')
+        return request.user.has_perm('purchasing.can_manage_supplier')
 
 
 class CanManagePurchaseOrderMaterial(BasePermission):
@@ -29,4 +29,4 @@ class CanManagePurchaseOrderMaterial(BasePermission):
     message = get_error_message('purchase order material')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_purchase_order_material')
+        return request.user.has_perm('purchasing.can_manage_purchase_order_material')

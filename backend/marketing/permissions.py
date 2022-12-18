@@ -18,7 +18,7 @@ class CanManageCustomer(BasePermission):
     message = get_error_message('customer')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_customer')
+        return request.user.has_perm('marketing.can_manage_customer')
 
 
 class CanManageSalesOrder(BasePermission):
@@ -28,5 +28,5 @@ class CanManageSalesOrder(BasePermission):
     message = get_error_message('sales order')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_sales_order')
+        return request.user.has_perm('marketing.can_manage_sales_order')
 

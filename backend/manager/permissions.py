@@ -19,5 +19,5 @@ class CanManageUser(BasePermission):
     message = get_error_message('User')
 
     def has_permission(self, request, view):
-        return request.user.has_perm('can_manage_user')
+        return request.user.has_perm('auth.can_manage_user')
 

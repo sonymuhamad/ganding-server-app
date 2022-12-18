@@ -815,7 +815,7 @@ class DeliveryNoteMaterialReadOnlyViewSet(ReadOnlyModelViewSet):
     permission_classes = [PpicPermission]
     serializer_class = DeliveryNoteMaterialReadOnlySerializer
     queryset = DeliveryNoteMaterial.objects.prefetch_related(
-            Prefetch('materialreceipt_set',queryset=MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier'))).select_related('supplier')
+            Prefetch('materialreceipt_set',queryset=MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier','delivery_note_material','delivery_note_material__supplier'))).select_related('supplier')
 
 
 class DeliveryNoteMaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
@@ -886,7 +886,7 @@ class DeliveryNoteCustomerReadOnlyViewSet(ReadOnlyModelViewSet):
     permission_classes = [PpicPermission]
     serializer_class = DeliveryNoteCustomerReadOnlySerializer
     queryset = DeliveryNoteCustomer.objects.prefetch_related(
-            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order','schedules'))).select_related('customer','vehicle','driver')
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order','schedules','delivery_note_customer','delivery_note_customer__customer','delivery_note_customer__vehicle','delivery_note_customer__driver','schedules__product_order'))).select_related('customer','vehicle','driver')
 
 class DeliveryNoteCustomerManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''

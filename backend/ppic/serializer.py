@@ -78,15 +78,18 @@ class ProcessTypeSerializer(ModelSerializer):
 
 class ProductListSerializer(ModelSerializer):
     rest_order = serializers.IntegerField(read_only=True) ## additional field used in rest order in dashboard page
+    total_order = serializers.IntegerField(read_only=True)
     class Meta:
         model = Product
         fields = '__all__'
         depth = 1
 
-class MaterialListSerializer(ModelSerializer):
+class MaterialListReadOnlySerializer(ModelSerializer):
+    total_order = serializers.IntegerField(read_only=True)
     class Meta:
         model = Material
         fields = '__all__'
+        depth = 1
 
 class SupplierListSerializer(ModelSerializer):
     class Meta:
@@ -952,7 +955,7 @@ class WarehouseTypeReadOnlySerializer(ModelSerializer):
 class MaterialReceiptReadOnlySerializer(ModelSerializer):
     class Meta:
         model = MaterialReceipt
-        exclude = ['delivery_note_material']
+        fields = '__all__'
         depth = 3
 
 class DeliveryNoteMaterialReadOnlySerializer(ModelSerializer):
@@ -1073,7 +1076,7 @@ class ProductDeliverCustomerReadOnlySerializer(ModelSerializer):
     '''
     class Meta:
         model = ProductDeliverCustomer
-        exclude = ['delivery_note_customer']
+        fields = '__all__'
         depth = 2
 
 class DeliveryNoteCustomerReadOnlySerializer(ModelSerializer):

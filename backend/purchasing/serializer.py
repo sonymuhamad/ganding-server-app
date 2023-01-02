@@ -30,51 +30,7 @@ class BaseMaterialOrderSerializer(ModelSerializer):
         model = MaterialOrder
         fields = '__all__'
 
-### material requirement planning read only serializer
-
-class DetailMrpReadOnlySerializer(ModelSerializer):
-    '''
-    get
-    '''
-    class Meta:
-        model = DetailMrp
-        fields = ['id','quantity','quantity_production','product']
-        depth = 1
-
-class MrpReadOnlySerializer(ModelSerializer):
-    '''
-    get
-    '''
-    detailmrp_set = DetailMrpReadOnlySerializer(many=True)
-    class Meta:
-        model = MaterialRequirementPlanning
-        fields = ['id','quantity','detailmrp_set']
-
-
-class MaterialReadOnlySerializer(ModelSerializer):
-    '''
-    get
-    '''
-    ppic_materialrequirementplanning_related = MrpReadOnlySerializer(many=True)
-
-    class Meta:
-        model = Material
-        fields = '__all__'
-        
-class SupplierMrpReadOnlySerializer(BaseSupplierSerializer):
-    '''
-    get
-    '''
-    ppic_material_related = MaterialReadOnlySerializer(many=True)
-    class Meta(BaseSupplierSerializer.Meta):
-        fields = '__all__'
-
-### material requirement planning read only serializer
-
-
-############
-### purchase order material read only serializer
-
+    
 class MaterialReceiptScheduleReadOnlySerializer(ModelSerializer):
     class Meta:
         model = MaterialReceiptSchedule
@@ -82,6 +38,8 @@ class MaterialReceiptScheduleReadOnlySerializer(ModelSerializer):
         depth = 3
 
 class MaterialOrderReadOnlySerializer(BaseMaterialOrderSerializer):
+    materialreceiptschedule_set = MaterialReceiptScheduleReadOnlySerializer(many=True)
+    total_receipt_schedule = serializers.IntegerField(read_only=True)
     class Meta(BaseMaterialOrderSerializer.Meta):
         depth = 2
 
@@ -132,6 +90,7 @@ class MaterialReceiptScheduleManagementSerializer(ModelSerializer):
         
         instance.date = validated_data.get('date',instance.date)
         instance.quantity = validated_data.get('quantity',instance.quantity)
+        instance.save()
         return instance
         
     class Meta:
@@ -142,25 +101,40 @@ class MaterialOrderManagementSerializer(BaseMaterialOrderSerializer):
     '''
     a serializer for cud material order
     '''
+
+    def check_requirement_production(self,material:Material,product:Product):
+
+        reqMaterial = material.ppic_requirementmaterial_related.filter(process__product__exact=product).exists()
+
+        return reqMaterial
+
+    def check_requrirement_production_subcont(self,material:Material,product:Product):
+        reqMaterialSubcont = material.ppic_requirementmaterialsubcont_related.filter(product_subcont__product__exact=product).exists()
+        
+        return reqMaterialSubcont
+
     def validate(self, attrs):
 
-        if attrs['purchase_order_material'].done:
-            invalid('This purchase order already closed')
+        if attrs['purchase_order_material'].done or attrs['purchase_order_material'].closed:
+            invalid('Purchase order ini telah selesai atau ditutup')
         
         supplier_from_purchase_order = attrs['purchase_order_material'].supplier
         material = attrs['material']
         supplier_from_material = material.supplier
-
+        to_product = attrs.get('to_product',None)
         if supplier_from_material != supplier_from_purchase_order:
             invalid(f'Material {material.name} is not belong to {supplier_from_purchase_order.name}')
-    
+
+        if to_product is not None:
+            if not self.check_requirement_production(material,to_product) and not self.check_requrirement_production_subcont(material,to_product):
+                invalid(f'Material tersebut bukan untuk produksi ${to_product.name}')
+
         return super().validate(attrs)
 
     def update(self, instance, validated_data):
         
         instance.ordered = validated_data.get('ordered',instance.ordered)
-        if instance.ordered <= instance.arrived:
-            instance.done = True
+        instance.price = validated_data.get('price',instance.price)
         instance.save()
         return instance
 
@@ -182,7 +156,7 @@ class StatusPurchaseOrderManagementSerializer(ModelSerializer):
                 ## recheck all material order is already completed
                 
                 if mo.ordered > mo.arrived:
-                    invalid('Cannot change status purchase order material to Complete, due to there are still orders in progress')
+                    invalid('Masih ada material yang belum datang')
         
         instance.done = validated_data_done
         instance.save()
@@ -192,8 +166,29 @@ class StatusPurchaseOrderManagementSerializer(ModelSerializer):
         model = PurchaseOrderMaterial
         fields = ['id','done']
 
-class PurchaseOrderManagementSerializer(BasePurchaseOrderMaterialSerializer):
+class CloseStatusPurchaseOrderSerializer(ModelSerializer):
+    '''
+    a serialzier to change status closed of purchase order material
+    '''
 
+    def update(self, instance, validated_data):
+
+        if not instance.done:
+            invalid('Purchase order belum selesai')
+        
+        instance.closed = validated_data.get('closed',instance.closed)
+        instance.save()
+        return instance
+        
+    class Meta:
+        model = PurchaseOrderMaterial
+        fields = ['id','closed']
+
+class PurchaseOrderManagementSerializer(ModelSerializer):
+
+    def create(self, validated_data):
+        print(validated_data)
+        return super().create(validated_data)
 
     def update(self, instance, validated_data):
         '''
@@ -201,16 +196,20 @@ class PurchaseOrderManagementSerializer(BasePurchaseOrderMaterialSerializer):
         '''
 
         if instance.done:
-            invalid('This purchase order already done')
+            invalid('Purchase order ini telah selesai atau telah ditutup')
 
         instance.code = validated_data.get('code',instance.code)
         instance.date = validated_data.get('date',instance.date)
-
+        instance.tax = validated_data.get('tax',instance.tax)
+        instance.description = validated_data.get('description',instance.description)
+        instance.discount = validated_data.get('discount',instance.discount)
         instance.save()
+
         return instance
 
-    class Meta(BasePurchaseOrderMaterialSerializer.Meta):
-        pass
+    class Meta:
+        model = PurchaseOrderMaterial
+        fields = '__all__'
 
 
 
@@ -256,10 +255,30 @@ class SupplierReadOnlySerializer(ModelSerializer):
         model = Supplier
         fields ='__all__'
 
+class RequirementMaterialListSerializer(ModelSerializer):
+    '''
+    a serializer class provide data requirement material used in production
+    '''
+    class Meta:
+        model = RequirementMaterial
+        exclude = ['material']
+        depth = 2
+
+class RequirementMaterialSubcontListSerializer(ModelSerializer):
+    '''
+    a serializer class provide data requirement material used in product subconstruction
+    '''
+    class Meta:
+        model = RequirementMaterialSubcont
+        exclude = ['material']
+        depth = 2
+
 class MaterialListSerializer(ModelSerializer):
     '''
     a serializer for get material, for add material order in detail purchase order page
     '''
+    ppic_requirementmaterial_related = RequirementMaterialListSerializer(many=True)
+    ppic_requirementmaterialsubcont_related = RequirementMaterialSubcontListSerializer(many=True)
     class Meta:
         model = Material
         fields = '__all__'
@@ -282,7 +301,6 @@ class MaterialReceiptListSerializer(ModelSerializer):
         model = MaterialReceipt
         fields = '__all__'
         depth = 3
-
 
 
 

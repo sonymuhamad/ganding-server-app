@@ -1,14 +1,15 @@
-from rest_framework.serializers import ModelSerializer,StringRelatedField,IntegerField,Serializer,DateField
+from rest_framework.serializers import ModelSerializer,StringRelatedField,IntegerField,Serializer,DateField,FloatField
 from oauth2_provider.models import AccessToken
 from django.contrib.auth.models import User,Group,Permission
 
-from ppic.models import MaterialRequirementPlanning,DetailMrp,Product,WarehouseProduct,Process,ProductOrder,Material,MaterialOrder,MaterialReceiptSchedule,DeliveryNoteCustomer,ProductDeliverCustomer
+from ppic.models import MaterialRequirementPlanning,DetailMrp,Product,WarehouseProduct,Process,ProductOrder,Material,MaterialOrder,MaterialReceiptSchedule,DeliveryNoteCustomer,ProductDeliverCustomer,Operator,Machine
 
 from marketing.models import SalesOrder,Customer
 
 from purchasing.models import Supplier,PurchaseOrderMaterial
 from .shortcuts import invalid,get_default_password
 from ppic.serializer import ProductListSerializer,MaterialListReadOnlySerializer
+from math import ceil
 
 
 
@@ -97,73 +98,6 @@ class GroupReadOnlySerializer(ModelSerializer):
         model = Group
         fields = '__all__'
 
-
-
-class DetailMrpSerializer(ModelSerializer):
-    
-    class Meta:
-        model = DetailMrp
-        fields = ['quantity','quantity_production','product']
-        depth = 1
-
-class ReportMrpSerializer(ModelSerializer):
-    '''
-    plant manager -> report mrp
-    '''
-    detailmrp_set =  DetailMrpSerializer(many=True) #related name
-
-    class Meta:
-        model = MaterialRequirementPlanning
-        fields = ['material','quantity','detailmrp_set']
-        depth = 1
-
-
-'''
-serializer for sales order
-'''
-
-class WarehouseProductSerializer(ModelSerializer):
-    warehouse_type = StringRelatedField()
-    class Meta:
-        model = WarehouseProduct
-        fields = ['quantity','warehouse_type']
-
-class ProcessSerializer(ModelSerializer):
-    warehouseproduct_set = WarehouseProductSerializer(many=True)
-    class Meta:
-        model= Process
-        fields = ['process_name','order','process_type','product','warehouseproduct_set']
-         
-
-class ProductSerializer(ModelSerializer):
-    ppic_warehouseproduct_related = WarehouseProductSerializer(many=True)
-    ppic_process_related = ProcessSerializer(many=True)
-    class Meta:
-        model = Product
-        fields = ['name','code','ppic_warehouseproduct_related','process','image','ppic_process_related']
-
-class ProductOrderSerializer(ModelSerializer):
-    product = ProductSerializer()
-    class Meta:
-        model = ProductOrder
-        fields = ['ordered','delivered','product']
-
-class ReportSalesOrderSerializer(ModelSerializer):
-    productorder_set = ProductOrderSerializer(many=True)
-    class Meta:
-        model = SalesOrder
-        fields = ['code','fixed','created','productorder_set']
-
-class CustomerSalesOrderSerializer(ModelSerializer):
-    '''
-    plant manager -> report sales order -> data product
-    '''
-    marketing_salesorder_related = ReportSalesOrderSerializer(many=True)
-    class Meta:
-        model = Customer
-        fields = ['id','name','email','phone','address','marketing_salesorder_related']
-
-
 '''
 serializer for schedule material receipt
 '''
@@ -205,39 +139,6 @@ class SupplierSerializer(ModelSerializer):
         fields = ['name','email','phone','address','purchasing_purchaseordermaterial_related']
 
 
-
-'''
-serializer for delivery note
-'''
-class ProductOrderSerializer(ModelSerializer):
-    product = StringRelatedField()
-    class Meta:
-        model = ProductOrder
-        fields = ['ordered','delivered','product','sales_order']
-
-class ProductDeliveryNoteCustomerSerializer(ModelSerializer):
-
-    class Meta:
-        model = ProductDeliverCustomer
-        fields = ['quantity','paid','product_order']
-        depth = 2
-
-class DeliveryNoteCustomerSerializer(ModelSerializer):
-    productdelivercustomer_set = ProductDeliveryNoteCustomerSerializer(many=True)
-    class Meta:
-        model = DeliveryNoteCustomer
-        fields = ['code','created','driver','vehicle','productdelivercustomer_set']
-        depth = 1
-
-
-class CustomerDeliveryNoteSerializer(ModelSerializer):
-    ppic_deliverynotecustomer_related = DeliveryNoteCustomerSerializer(many=True)
-    class Meta:
-        model = Customer
-        fields = ['id','name','email','phone','address','ppic_deliverynotecustomer_related']
-
-
-
 class ReportOrderEachMonthReadOnlySerializer(Serializer):
     '''
     a serializer class for get total quantity order of all product each month
@@ -275,6 +176,64 @@ class ReportSupplierOrderReadOnlySerializer(ModelSerializer):
     
     class Meta:
         model = Supplier
+        fields = '__all__'
+
+
+class ReportProductionReadOnlySerializer(Serializer):
+    '''
+    a serializer class for get data quantity production and quantity not good of production each month
+    '''
+    production_date = DateField()
+    total_good_production = IntegerField()
+    total_not_good_production = IntegerField()
+
+
+class OperatorReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer class for get all data operator and its total times production, success percentage when production, and avg of each production
+    '''
+    avg_production = FloatField()
+    good_percentage = IntegerField()
+    times_do_production = IntegerField()
+    total_goods_produced = IntegerField()
+
+    def to_representation(self, instance):
+        '''
+        ceil avg production
+        '''
+
+        ret = super().to_representation(instance)
+        ret['avg_production'] = ceil(ret['avg_production'])
+
+        return ret
+
+    class Meta:
+        model = Operator
+        fields = '__all__'
+
+
+class MachineReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer class for get all data machine and its total times production, success percentage when produce, and avg of each do production
+    '''
+    avg_production = FloatField()
+    good_percentage = IntegerField()
+    times_do_production = IntegerField()
+    total_goods_produced = IntegerField()
+
+    
+    def to_representation(self, instance):
+        '''
+        ceil avg production
+        '''
+        ret = super().to_representation(instance)
+        ret['avg_production'] = ceil(ret['avg_production'])
+
+        return ret
+
+
+    class Meta:
+        model = Machine
         fields = '__all__'
 
 

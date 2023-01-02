@@ -1,7 +1,6 @@
 from django.db import models
 from manager.models import  AbstractCustomerVendor,AbstractCode,AbstractCreated
-from django.core.exceptions import ValidationError
-import datetime
+from datetime import date
 
 # Create your models here.
 
@@ -17,13 +16,24 @@ class AbstractCustomer(models.Model):
 
 class SalesOrder(AbstractCode,AbstractCustomer,AbstractCreated):
     fixed = models.BooleanField(default=False)
-    done = models.BooleanField(default=False)
-    date = models.DateField(default=datetime.date.today)
+    closed = models.BooleanField(default=False)
+    date = models.DateField(default=date.today)
+    description = models.TextField(default='')
 
     class Meta(AbstractCode.Meta,AbstractCustomer.Meta,AbstractCreated.Meta):
         pass
 
 
+class Invoice(AbstractCode,AbstractCreated):
+    '''
+    a model class for invoicing data of sales order
+    '''
+    sales_order = models.ForeignKey(SalesOrder,on_delete=models.CASCADE)
+    date = models.DateField(default=date.today)
+    done = models.BooleanField(default=False)
+    closed = models.BooleanField(default=False)
+    discount = models.PositiveBigIntegerField(default=0)
+    tax = models.PositiveSmallIntegerField(default=10)
 
 
 

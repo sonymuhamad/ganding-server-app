@@ -1,81 +1,68 @@
-from rest_framework.serializers import ModelSerializer,ValidationError,StringRelatedField
-from .models import Customer, SalesOrder
+from rest_framework.serializers import ModelSerializer,IntegerField,DateField
+from .models import Customer, SalesOrder,Invoice
 from ppic.models import DeliverySchedule, Product, Process, ProductOrder,DeliveryNoteCustomer,ProductDeliverCustomer, WarehouseProduct
 from rest_framework import serializers
 from django.db.models import Prefetch
+from manager.shortcuts import invalid
+from datetime import date
+
+from ppic.serializer import ProductListSerializer
 
 class SalesOrderSerializer(ModelSerializer):
     class Meta:
         model = SalesOrder
-        fields = ['id','fixed','code','created','done','date',]
+        fields = ['id','fixed','code','created','date',]
 
 class CustomerSerializer(ModelSerializer):
+    '''
+    a serializer class for get data customer
+    '''
+    total_product = serializers.IntegerField(read_only=True)
+    total_sales_order = serializers.IntegerField(read_only=True)
+    most_ordered_product = ProductListSerializer(read_only=True)
     class Meta:
         model = Customer
         fields = '__all__'
 
 
-
-class CustomerManagementSerializer(ModelSerializer):
-    marketing_salesorder_related = SalesOrderSerializer(many=True)
-    class Meta:
-        model = Customer
-        fields = ['id','name','email','phone','address','marketing_salesorder_related']
-
-
-### Customer sales order management serializer
-
-class DeliveryScheduleManagementSerializer(ModelSerializer):
-
+class DeliveryScheduleReadOnlySerializer(ModelSerializer):
     '''
-    post , put
+    a serializer class for get and retrieve delivery schedule
     '''
     class Meta:
         model = DeliverySchedule
-        fields = ['id','quantity','date']
+        fields = '__all__'
+        depth = 3
+
 
 class ProductOrderManagementSerializer(ModelSerializer):
     '''
-    post , put
+    a serializer class for management product order
     '''
-    deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
-
-    def validate_deliveryschedule_set(self,attrs):
-        delivered = self.initial_data.get('delivered',0)
-        available_schedule = self.initial_data['ordered'] - delivered
-        temp = 0
-        
-        for schedule in attrs:
-            temp += schedule['quantity']
-        
-        if temp > available_schedule:
-            raise ValidationError('Jumlah pengiriman product pada jadwal melebihi pesanan')
-        
-        return attrs
-
+    delivered = serializers.IntegerField(default=0)
+    price = serializers.IntegerField(default=0)
+    
     def validate(self, attrs):
         '''
         kalo quantity PRODUCT ORDERED lebih daripada DELIVERED, maka invalid
         '''
         delivered = attrs.get('delivered',0)
         so = attrs.get('sales_order')
-        done = attrs.get('done')
+        product = attrs.get('product')
 
         if delivered > attrs['ordered']:
-             raise ValidationError('Jumlah product terkirim lebih dari jumlah product pesanan')
+             invalid('Jumlah product terkirim lebih dari jumlah product pesanan')
 
-        if so.fixed or so.done:
-             raise ValidationError('Sales order tersebut sudah fixed atau sudah selesai')
+        if so.fixed or so.closed:
+             invalid('Sales order tersebut sudah fixed atau sudah ditutup')
 
-        if done:
-            raise ValidationError('Product order tersebut sudah selesai')
+        if so.customer != product.customer:
+            invalid(f'Product tersebut bukan milik ${so.customer.name}')
 
         return super().validate(attrs)
 
     def create(self, validated_data):
-        
-        schedules = validated_data.pop('deliveryschedule_set')
-        inserted_schedule = []
+
         product = validated_data['product']
         sales_order = validated_data['sales_order']
         
@@ -87,141 +74,81 @@ class ProductOrderManagementSerializer(ModelSerializer):
             product_order.ordered += validated_data['ordered']
             product_order.save()
 
-        for schedule in schedules:
-            inserted_schedule.append(DeliverySchedule(**schedule,product_order=product_order))
-
-        DeliverySchedule.objects.bulk_create(inserted_schedule)
-
         return product_order
 
     def update(self, instance, validated_data):
-        inserted_schedule = []
-        updated_schedule = []
-        deleted_schedule = []
-
-        schedules = validated_data.pop('deliveryschedule_set')
-        len_schedules = len(schedules)
-
-        instance_schedules = instance.deliveryschedule_set.all()
-        len_instance_schedules = len(instance_schedules)
+    
         instance.ordered = validated_data['ordered']
-        instance.delivered = validated_data.get('delivered',instance.delivered)
+        instance.price = validated_data.get('price',instance.price)
         instance.save()
-
-        l = 0
-        if len_schedules > 0:    
-            for i in range(len_schedules):
-                if i > len_instance_schedules - 1:
-                    inserted_schedule.append(DeliverySchedule(**schedules[i],product_order=instance))
-                else:
-                    instance_schedule = instance_schedules[i]
-                    instance_schedule.quantity = schedules[i]['quantity']
-                    instance_schedule.date = schedules[i]['date']
-                    updated_schedule.append(instance_schedule)
-            l += i
-
-        deleted_schedule = deleted_schedule[:] + instance_schedules[l:]
-
-        DeliverySchedule.objects.bulk_create(inserted_schedule)
-        DeliverySchedule.objects.bulk_update(updated_schedule,['quantity','date'])
-
-        for schedule in deleted_schedule:
-            schedule.delete()
         
         return instance 
         
     class Meta:
         model = ProductOrder
-        fields = ['id','ordered','product','delivered','deliveryschedule_set','sales_order','done']
+        fields = '__all__'
 
+class DeliveryScheduleManagementSerializer(ModelSerializer):
+    '''
+    a serializer class for management delivery schedule
+    '''
+    def validate_date(self,attrs):
+        
+        if attrs < date.today():
+            invalid('Could not enter a schedule for the past')
+        
+        return attrs
 
+    def validate_product_order(self,attrs):
 
-class ProductOrderManagementUnitedSerializer(ModelSerializer):
-    deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
+        if attrs.delivered >= attrs.ordered:
+            invalid('Order tersebut sudah selesai')
+
+        if attrs.sales_order.closed:
+            invalid('Sales order sudah ditutup')
+        return attrs
+
+    def update(self, instance, validated_data):
+
+        if instance.fulfilled_quantity > 0:
+            invalid('Jadwal sudah tidak bisa diubah')
+
+        instance.quantity = validated_data.get('quantity',instance.quantity)
+        instance.date = validated_data.get('date',instance.date)
+        instance.save()
+        return instance
+        
     class Meta:
-        model = ProductOrder
-        fields = ['id','ordered','product','delivered','deliveryschedule_set','done']
+        model = DeliverySchedule
+        fields = '__all__'
 
 class SalesOrderManagementSerializer(ModelSerializer):
     '''
-    post , put
+    a serializer class for management sales order
     '''
-    productorder_set = ProductOrderManagementUnitedSerializer(many=True)
-
-    def validate_productorder_set(self,attrs):
-        
-        count = 1
-
-        for productorder in attrs:
-            temp = 0
-            for schedule in productorder['deliveryschedule_set']:
-                temp += schedule['quantity']
-            if temp > productorder['ordered']:
-                raise ValidationError(f'Jumlah product pada jadwal pengiriman melebihi jumlah product pada pesanan {count}')
-            count += 1
-
-        return attrs
-
-    def validate(self, attrs):
-        productorder = attrs['productorder_set']
-        customer = attrs['customer']
-        for porder in productorder:
-            if porder['product'].customer != customer:
-                raise ValidationError('Product and customer do not match')
-
-        return super().validate(attrs)
-
-
-    def create(self, validated_data):
-        delivery_schedule_objects = [] 
-        temp_product_orders = validated_data.pop('productorder_set')
-        new_sales_order = SalesOrder.objects.create(**validated_data)
-        
-        for product_order in temp_product_orders:
-            schedules = product_order.pop('deliveryschedule_set')
-
-            product = product_order['product']
-
-            new_product_order = ProductOrder.objects.filter(product=product,sales_order=new_sales_order).first()
-        
-            if new_product_order == None:
-                new_product_order = ProductOrder.objects.create(sales_order=new_sales_order,**product_order)
-            else:
-                new_product_order.ordered += product_order['ordered']
-                new_product_order.save()
-            
-            for schedule in schedules:
-                delivery_schedule_objects.append(DeliverySchedule(**schedule,product_order=new_product_order))     
-
-        DeliverySchedule.objects.bulk_create(delivery_schedule_objects)
-        return new_sales_order
+    
+    description = serializers.CharField(allow_blank=True)
 
     def update(self, instance, validated_data):
         
         fixed = instance.fixed
         validate_data_fixed = validated_data['fixed']
+        if instance.closed:
+            invalid('Sales order tersebut sudah ditutup')
 
-        if fixed and validate_data_fixed:
-            raise ValidationError('Sales order has been fixed, data changes are not allowed')
-        elif not fixed and validate_data_fixed or fixed and not validate_data_fixed :
-            instance.fixed = validated_data['fixed']
-
-        instance.code = validated_data['code']
-        instance.date = validated_data['date']
-        instance.save()
+        if not instance.closed and validated_data['closed']:
+            for product_order in instance.productorder_set.all():
+                if product_order.ordered < product_order.delivered:
+                    invalid('Masih ada pesanan yang belum selesai, Sales order tidak bisa ditutup')
         
-        return instance 
+        if fixed and validate_data_fixed and not validated_data['closed']:
+            invalid('Sales order sudah berjalan, jika ingin mengubah data, jadikan status sales order menjadi Pending')
+        
+        return super().update(instance, validated_data)
         
     class Meta:
         model = SalesOrder
-        fields = ['id','code','customer','productorder_set','fixed','date','done']
-        read_only_fields = ['productorder_set']
-
-### Customer sales order management serializer
-
-
-
-### Customer sales order read only serializer
+        fields = '__all__'
 
 class ProductOrderReadOnlySerializer(ModelSerializer):
     '''
@@ -231,7 +158,7 @@ class ProductOrderReadOnlySerializer(ModelSerializer):
         
     class Meta:
         model = ProductOrder
-        fields = ['id','ordered','delivered','product','deliveryschedule_set','done']
+        fields = ['id','ordered','delivered','product','deliveryschedule_set','price']
         depth = 1
 
 class SalesOrderReadOnlySerializer(ModelSerializer):
@@ -241,17 +168,7 @@ class SalesOrderReadOnlySerializer(ModelSerializer):
     productorder_set = ProductOrderReadOnlySerializer(many= True)
     class Meta:
         model = SalesOrder
-        fields = ['id','code','productorder_set','fixed','done','date']
-
-
-class CustomerSalesOrderReadOnlySerializer(ModelSerializer):
-    '''
-    get
-    '''
-    marketing_salesorder_related = SalesOrderReadOnlySerializer(many=True)
-    class Meta:
-        model = Customer
-        fields = ['id','name','phone','address','marketing_salesorder_related']
+        fields = ['id','code','productorder_set','fixed','date','description','closed']
 
 ### Sales order page
 
@@ -264,33 +181,28 @@ class ProductDeliverListSerializer(ModelSerializer):
         exclude = ['product_order']
         depth = 2
 
-class ProductOrderListSerializer(ModelSerializer):
+class NestedProductOrderListSerializer(ModelSerializer):
     '''
-    get
+    a serializer class for get product order nested from sales order
     '''
-    deliveryschedule_set = DeliveryScheduleManagementSerializer(many=True)
     productdelivercustomer_set = ProductDeliverListSerializer(many=True)
+    total_deliver = serializers.IntegerField(read_only=True)
     class Meta:
         model = ProductOrder
         exclude = ['sales_order']
         depth = 1
 
 class SalesOrderListSerializer(ModelSerializer):
+    '''
+    a serializer class for get, and retrieve sales order nested to product order
+    '''
     productordered = serializers.IntegerField(read_only=True)
     productdelivered = serializers.IntegerField(read_only=True)
-    productorder_set = ProductOrderListSerializer(many= True)
+    productorder_set = NestedProductOrderListSerializer(many= True)
     class Meta:
         model = SalesOrder
         fields = '__all__'
         depth = 1
-
-### Sales order page
-
-### Customer sales order read only serializer
-
-
-
-### Customer delivery read only serializer
 
 class DeliveryProductCustomerListSerializer(ModelSerializer):
     '''
@@ -298,7 +210,7 @@ class DeliveryProductCustomerListSerializer(ModelSerializer):
     '''
     class Meta:
         model = ProductDeliverCustomer
-        fields = ['id','quantity','paid','product_order']
+        fields = '__all__'
         depth = 2
 
 class DeliveryNoteCustomerListSerializer(ModelSerializer):
@@ -319,7 +231,7 @@ class DeliveryProductCustomerSerializer(ModelSerializer):
     '''
     class Meta:
         model = ProductDeliverCustomer
-        fields = ['id','quantity','paid','product_order']
+        fields = ['id','quantity','product_order']
         depth = 2
 
 class DeliveryNoteCustomerSerializer(ModelSerializer):
@@ -341,19 +253,6 @@ class DeliveryCustomerSerializer(ModelSerializer):
         model = Customer
         fields = ['id','name','email','phone','address','ppic_deliverynotecustomer_related']
 
-### Customer delivery read only serializer
-
-
-### Customer delivery note management serializer
-
-class DeliveryProductCustomerManagementSerializer(ModelSerializer):
-    '''
-    put post
-    '''
-    class Meta:
-        model = ProductDeliverCustomer
-        fields = ['id','paid']
-
 class DeliveryNoteCustomerManagementSerializer(ModelSerializer):
     '''
     put post
@@ -361,8 +260,6 @@ class DeliveryNoteCustomerManagementSerializer(ModelSerializer):
     class Meta:
         model = DeliveryNoteCustomer
         fields = ['id','code','note']
-
-### Customer delivery note management serializer
 
 class WarehouseProductReadOnlySerializer(ModelSerializer):
     class Meta:
@@ -403,6 +300,81 @@ class CustomerDetailProductSerializer(ModelSerializer):
         model = Customer
         fields = ['id','name','ppic_product_related']
 
+
+class InvoiceManagementSerializer(ModelSerializer):
+    '''
+    a serializer class for management invoice
+    '''
+
+    def create(self, validated_data):
+
+        sales_order = validated_data['sales_order']
+        if not sales_order.closed:
+            invalid('Harap selesaikan sales order dahulu sebelum membuat invoice') 
+
+        querysetInvoice = Invoice.objects.filter(sales_order=sales_order)
+        if querysetInvoice.exists():
+            invalid('Invoice untuk sales order tersebut sudah dibuat')
+
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+
+        if instance.done and validated_data['done']:
+            invalid('Invoice sudah selesai')
+
+        if instance.closed:
+            invalid('Invoice tersebut sudah ditutup')
+
+        instance.code = validated_data.get('code',instance.code)
+        instance.date = validated_data.get('date',instance.date)
+        instance.discount = validated_data.get('discount',instance.discount)
+        instance.tax = validated_data.get('tax',instance.tax)
+        instance.closed = validated_data.get('closed',instance.closed)
+        instance.done = validated_data.get('done',instance.done)
+
+        instance.save()
+        return instance
+
+    class Meta:
+        model = Invoice
+        fields = '__all__'
+
+class ProductOrderReadOnlyFromInvoiceSerializer(ModelSerializer):
+    '''
+    a nested serializer for get product order from sales order and from invoice
+    '''
+    class Meta:
+        model = ProductOrder
+        exclude = ['sales_order']
+        depth = 2
+
+class SalesOrderReadOnlyFromInvoiceSerializer(ModelSerializer):
+    '''
+    a nested serializer for get sales order from invoice
+    '''
+    productorder_set = ProductOrderReadOnlyFromInvoiceSerializer(many=True)
+    class Meta:
+        model = SalesOrder
+        fields = '__all__'
+        depth = 1
+
+class InvoiceReadOnlySerializer(ModelSerializer):
+    '''
+    a serializer class for get data of invoice
+    '''
+    sales_order = SalesOrderReadOnlyFromInvoiceSerializer()
+    class Meta:
+        model = Invoice
+        fields = '__all__'
+
+
+class ReportProductOrderSerializer(serializers.Serializer):
+    '''
+    a serializer for provide set of data about quantity product order each month
+    '''
+    total_order = IntegerField()
+    date = DateField()
 
 
 

@@ -13,7 +13,11 @@ class AbstractSupplier(models.Model):
 
 class PurchaseOrderMaterial(AbstractCode,AbstractSupplier,AbstractCreated):
     done = models.BooleanField(default=False)
+    closed = models.BooleanField(default=False)
     date = models.DateField(default=datetime.date.today)
+    tax = models.PositiveSmallIntegerField(default=10)
+    discount = models.PositiveBigIntegerField(default=0)
+    description = models.TextField(default='')
 
     class Meta(AbstractCode.Meta,AbstractSupplier.Meta,AbstractCreated.Meta):
         pass

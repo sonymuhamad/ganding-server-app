@@ -13,17 +13,27 @@ class MarketingPermission(BasePermission):
         
 class CanManageCustomer(BasePermission):
     '''
-    a custom permission for disabled access to manage data customer if not granted
+    a custom permission for disable access to manage data customer if not granted
     '''
     message = get_error_message('customer')
 
     def has_permission(self, request, view):
         return request.user.has_perm('marketing.can_manage_customer')
 
+class CanManageInvoice(BasePermission):
+    '''
+    a custom permission for disable access to manage invoice if not granted
+    '''
+    message = get_error_message('invoice')
+
+    def has_permission(self, request, view):
+
+        return request.user.has_perm('marketing.can_manage_invoice')
+
 
 class CanManageSalesOrder(BasePermission):
     '''
-    a custom permission for disabled access to manage sales order if not granted
+    a custom permission for disable access to manage sales order if not granted
     '''
     message = get_error_message('sales order')
 

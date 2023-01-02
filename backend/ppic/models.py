@@ -47,6 +47,7 @@ class AbstractStuff(AbstractCreated):
     weight = models.FloatField(blank=True)
     image = models.ImageField(upload_to="images/",blank=True)
     last_update = models.DateTimeField(blank=True,null=True)
+    price = models.PositiveBigIntegerField(default=0)
 
     def __str__(self) -> str:
         return self.name
@@ -74,8 +75,13 @@ class ProductOrder(AbstractProduct):
     '''
     sales_order = models.ForeignKey(SalesOrder,on_delete=models.CASCADE)
     ordered = models.PositiveBigIntegerField()
+    price = models.PositiveBigIntegerField(default=0)
     delivered = models.PositiveBigIntegerField(default=0)
-    done = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if self.price is None or self.price == 0:
+            self.price = self.product.price
+        super(ProductOrder, self).save(*args, **kwargs)
 
 
 class DeliverySchedule(AbstractSchedule):
@@ -89,9 +95,10 @@ class Material(AbstractStuff,AbstractSupplier):
     '''
     '''
     spec = models.CharField(max_length=150)
-    length = models.FloatField(blank=True)
-    width = models.FloatField(blank=True)
-    thickness = models.FloatField(blank=True)
+    length = models.FloatField(blank=True,null=True)
+    width = models.FloatField(blank=True,null=True)
+    thickness = models.FloatField(blank=True,null=True)
+    berat_jenis = models.FloatField(blank=True,null=True)
     uom = models.ForeignKey(UnitOfMaterial,on_delete=models.CASCADE)
     
     class Meta(AbstractStuff.Meta,AbstractSupplier.Meta):
@@ -133,6 +140,9 @@ class WarehouseMaterial(models.Model):
     '''
     quantity = models.FloatField(default=0)
     material = models.OneToOneField(Material,on_delete=models.CASCADE)
+    def __str__(self) -> str:
+
+        return str(self.quantity)
     
 class Process(AbstractProduct):
     '''
@@ -203,6 +213,7 @@ class ProductDeliverSubcont(AbstractQuantity,AbstractProduct):
     '''
     deliver_note_subcont = models.ForeignKey(DeliveryNoteSubcont,on_delete=models.CASCADE)
     process = models.ForeignKey(Process,on_delete=models.CASCADE)
+    description = models.TextField(default='')
     
     class Meta(AbstractQuantity.Meta,AbstractProduct.Meta):
         pass
@@ -235,7 +246,7 @@ class ProductDeliverCustomer(AbstractQuantity):
     '''
     product_order = models.ForeignKey(ProductOrder,on_delete=models.CASCADE)
     delivery_note_customer = models.ForeignKey(DeliveryNoteCustomer,on_delete=models.CASCADE)
-    paid = models.BooleanField(default=False)
+    description = models.TextField(default='')
     schedules = models.OneToOneField(DeliverySchedule,blank=True,null=True,on_delete=models.SET_NULL)
 
 class MaterialRequirementPlanning(AbstractQuantity,AbstractMaterial,AbstractCreated):
@@ -263,8 +274,14 @@ class MaterialOrder(AbstractMaterial):
     '''
     purchase_order_material = models.ForeignKey(PurchaseOrderMaterial,on_delete=models.CASCADE)
     ordered = models.PositiveBigIntegerField()
+    to_product = models.ForeignKey(Product,on_delete=models.CASCADE,blank=True,null=True)
+    price = models.PositiveBigIntegerField(default=0)
     arrived = models.PositiveBigIntegerField(default=0)
-    done = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if self.price is None or self.price == 0:
+            self.price = self.material.price
+        super(MaterialOrder, self).save(*args, **kwargs)
 
 
 class MaterialReceiptSchedule(AbstractSchedule):

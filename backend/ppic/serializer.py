@@ -1,4 +1,4 @@
-from rest_framework.serializers import ModelSerializer,StringRelatedField,ValidationError,PrimaryKeyRelatedField
+from rest_framework.serializers import ModelSerializer,StringRelatedField,ValidationError,PrimaryKeyRelatedField,Serializer
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 from purchasing.models import Supplier
@@ -79,6 +79,7 @@ class ProcessTypeSerializer(ModelSerializer):
 class ProductListSerializer(ModelSerializer):
     rest_order = serializers.IntegerField(read_only=True) ## additional field used in rest order in dashboard page
     total_order = serializers.IntegerField(read_only=True)
+    total_stock = serializers.IntegerField(read_only=True)
     class Meta:
         model = Product
         fields = '__all__'
@@ -230,7 +231,7 @@ class ProductManagementSerializer(ModelSerializer):
             for req_product in req_products:
                 product = req_product.product
                 if product == product_in_process:
-                    raise ValidationError(f'Error in assembly product')
+                    invalid(f'Error in assembly product')
                 
                 manyProcessOfCertainProduct = product.ppic_process_related.prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product')))
 
@@ -243,8 +244,6 @@ class ProductManagementSerializer(ModelSerializer):
         many_process = validated_data.pop('ppic_process_related')
         len_process = len(many_process)
 
-        instance_old_process = instance.ppic_process_related.all()
-        len_instance_process = len(instance_old_process)
         instance.last_update = timezone.now()
         instance.process = len_process
         instance.save(update_fields=['last_update','process'])
@@ -335,7 +334,7 @@ class ProcessPartialManagementSerializer(ModelSerializer):
             for req_product in req_products:
                 product = req_product.product
                 if product == product_in_process:
-                    raise ValidationError(f'Error in assembly product')
+                    invalid(f'Error in assembly product')
                 
                 manyProcessOfCertainProduct = product.ppic_process_related.prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product')))
 
@@ -690,9 +689,9 @@ class MaterialSerializer(ModelSerializer):
         wh_material = instance.warehousematerial
 
         if len(req_material) > 0:
-            raise ValidationError('Tidak bisa mengubah data material yang menjadi kebutuhan produksi')
+            invalid('Tidak bisa mengubah data material yang menjadi kebutuhan produksi')
         if wh_material.quantity > 0:
-            raise ValidationError('Tidak bisa mengubah data material yang memiliki stok di gudang')
+            invalid('Tidak bisa mengubah data material yang memiliki stok di gudang')
         
         instance.last_update = timezone.now()
         instance.save(update_fields=["last_update"])
@@ -701,7 +700,7 @@ class MaterialSerializer(ModelSerializer):
     
     class Meta:
         model = Material
-        fields = ['id','name','spec','length','width','thickness','uom','supplier','weight','image']
+        fields = '__all__'
 
 class ConversionUomReadOnlySerializer(ModelSerializer):
     class Meta:
@@ -716,13 +715,13 @@ class ConversionUomManagementSerializer(ModelSerializer):
         output = attrs['uom_output']
 
         if input == output:
-            raise ValidationError(" It's forbidden to input conversion data from the same unit")
+            invalid(" It's forbidden to input conversion data from the same unit")
 
         uoms = ConversionUom.objects.filter(Q(uom_input = output) & Q(uom_output = input)).first()
         
         if uoms is None:
             return super().validate(attrs)
-        raise ValidationError(f'{input.name} has become the basis of conversion of {output.name}')
+        invalid(f'{input.name} has become the basis of conversion of {output.name}')
 
     class Meta:
         model = ConversionUom
@@ -746,9 +745,9 @@ class BasedConversionManagementSerializer(ModelSerializer):
         uoms = ConversionUom.objects.filter(Q(uom_input = unit_input) & Q(uom_output = unit_output)).first()
 
         if uoms is None:
-            raise ValidationError('Tidak ada data konversi pada unit material tersebut')
+            invalid('Tidak ada data konversi pada unit material tersebut')
         if input == output:
-            raise ValidationError('Tidak bisa mengkonversi material yang sama')
+            invalid('Tidak bisa mengkonversi material yang sama')
 
         return super().validate(attrs)
 
@@ -837,7 +836,7 @@ class MrpManagementSerializer(ModelSerializer):
         for detailmrp in attrs:
             temp += detailmrp['quantity']
         if temp > quantity_req:
-            raise ValidationError('Jumlah kebutuhan berlebih dari jumlah permintaan')
+            invalid('Jumlah kebutuhan berlebih dari jumlah permintaan')
 
         return attrs
     
@@ -975,8 +974,8 @@ class SupplierDeliveryNoteReadOnlySerializer(ModelSerializer):
 class MaterialReceiptManagementSerializer(ModelSerializer):
     
     def validate_material_order(self,attrs):
-        if attrs.done:
-                invalid('Order already done')
+        if attrs.arrived >= attrs.ordered:
+                invalid('Semua material sudah datang')
         
         return attrs
     
@@ -1005,9 +1004,6 @@ class MaterialReceiptManagementSerializer(ModelSerializer):
             schedules.fulfilled_quantity = validated_data['quantity']
             schedules.save()
 
-        if material_order.arrived >= material_order.ordered:
-            material_order.done = True
-
         whmaterial.save()
         material_order.save()
 
@@ -1034,11 +1030,6 @@ class MaterialReceiptManagementSerializer(ModelSerializer):
             instance_schedule.fulfilled_quantity -= instance.quantity
             instance_schedule.fulfilled_quantity += validated_data['quantity']
             instance_schedule.save()
-
-        if instance_mo.arrived >=instance_mo.ordered:
-            instance_mo.done = True
-        else:
-            instance_mo.done = False
 
         validated_data.pop('schedules',None)
 
@@ -1123,10 +1114,11 @@ class DeliveryNoteCustomerManagementSerializer(ModelSerializer):
 class ProductDeliverCustomerManagementSerializer(ModelSerializer):
     '''
     seriz for management product delivery
-    '''    
+    '''
+    description = serializers.CharField(allow_blank=True)
     def validate_product_order(self,attrs):
-        if attrs.done:
-            invalid('This order already finished')
+        if attrs.delivered > attrs.ordered:
+            invalid('Semua product yang dipesan telah dikirim')
 
         return attrs
     
@@ -1143,12 +1135,6 @@ class ProductDeliverCustomerManagementSerializer(ModelSerializer):
 
         wh_product.quantity -= quantity
         po.delivered += quantity
-
-        if po.delivered >= po.ordered:
-            po.done = True
-        else:
-            po.done = False
-
         po.save()
         wh_product.save()
 
@@ -1170,9 +1156,6 @@ class ProductDeliverCustomerManagementSerializer(ModelSerializer):
         
         if validated_data['quantity'] > (wh_product.quantity+instance.quantity):
             invalid('Insufficient stock of finished goods to make delivery')
-        
-        if instance.paid:
-            invalid('Product delivery is completed')
 
         validated_data.pop('schedules',None)
         instance_schedules = instance.schedules
@@ -1183,6 +1166,7 @@ class ProductDeliverCustomerManagementSerializer(ModelSerializer):
 
         self.fluence_stock_update(instance.product_order,wh_product,instance.quantity,validated_data['quantity'])
         instance.quantity = validated_data.get('quantity',instance.quantity)
+        instance.description = validated_data.get('description',instance.description)
         instance.save()
 
         return instance
@@ -1240,6 +1224,8 @@ class ProductDeliverySubcontManagementSerializer(ModelSerializer):
     '''
     seriz for management delivery product subcont
     '''
+
+    description = serializers.CharField(allow_blank=True)
 
     def suffciency_req_material_check(self,req_materials,production_quantity:int):
         
@@ -1586,7 +1572,7 @@ class ProductionReportManagementSerializer(ModelSerializer):
             stock_in_wh = wh_material.quantity
             used_material = (production_quantity / req_material.output) * req_material.input
             if used_material > stock_in_wh:
-                raise ValidationError(f'Jumlah stok {req_material.material.name} tidak cukup')
+                invalid(f'Jumlah stok {req_material.material.name} tidak cukup')
  
 
     def sufficiency_req_product_check(self,req_products,production_quantity:int):
@@ -1597,7 +1583,7 @@ class ProductionReportManagementSerializer(ModelSerializer):
             stock_in_whproduct = wh_product.quantity
             used_product = (production_quantity/req_product.output) * req_product.input
             if used_product > stock_in_whproduct:
-                raise ValidationError(f'Jumlah stok produk {product.name} tidak cukup')
+                invalid(f'Jumlah stok produk {product.name} tidak cukup')
 
     def validate(self, attrs):
 
@@ -1621,14 +1607,14 @@ class ProductionReportManagementSerializer(ModelSerializer):
         subcont_type = ProcessType.objects.get(pk=2)
         process_type = attrs.process_type
         if process_type == subcont_type:
-            raise ValidationError('Cannot do production on subcont process')
+            invalid('Cannot do production on subcont process')
 
         return attrs
 
     def validate_quantity(self,attrs):
 
         if attrs == 0:
-            raise ValidationError('Cannot do production with zero quantity')
+            invalid('Cannot do production with zero quantity')
 
         return attrs
 
@@ -2167,19 +2153,13 @@ class SubcontReceiptManagementSerializer(ModelSerializer):
 
         return super().update(instance, validated_data)
 
-class MonthlyProductionReportSerializer(ModelSerializer):
+class MonthlyProductionReportSerializer(Serializer):
     '''
     a serializer for get total quantity production on every month
     '''
     date__year = serializers.IntegerField()
     date__month = serializers.IntegerField()
     total_production = serializers.IntegerField()
-    class Meta:
-        model = ProductionReport
-        fields = ['date__month','total_production','date__year']
-        read_only_fields = ['date__year','date__month','total_production']
-
-
 
 
 

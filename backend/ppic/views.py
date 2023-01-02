@@ -83,7 +83,7 @@ class ProductDetailReadOnlyViewSet(ReadOnlyModelViewSet):
                 Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
             prefetch_related(
                 Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type'))).prefetch_related(
-                    Prefetch('ppic_productorder_related',queryset=ProductOrder.objects.select_related('sales_order').filter(done=False))).select_related('type').annotate(productordered=Sum('ppic_productorders__ordered')).annotate(productdelivered=Sum('ppic_productorders__delivered'))
+                    Prefetch('ppic_productorder_related',queryset=ProductOrder.objects.select_related('sales_order').filter(delivered__lt=F('ordered')))).select_related('type').annotate(productordered=Sum('ppic_productorders__ordered')).annotate(productdelivered=Sum('ppic_productorders__delivered'))
 
 class ProductTypeManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
@@ -161,7 +161,7 @@ class ProductOrderedViewSet(ReadOnlyModelViewSet):
     serializer_class = ProductListSerializer
     permission_classes=[PpicPermission]
     queryset = Product.objects.select_related('customer','type').prefetch_related(Prefetch(
-        'ppic_productorder_related',queryset=ProductOrder.objects.select_related('sales_order','product'))).filter(Q(ppic_productorders__sales_order__fixed=True)&Q(ppic_productorders__ordered__gt=F('ppic_productorders__delivered'))&Q(ppic_productorders__sales_order__done=False)).annotate(rest_order=Sum(
+        'ppic_productorder_related',queryset=ProductOrder.objects.select_related('sales_order','product'))).filter(Q(ppic_productorders__sales_order__fixed=True)&Q(ppic_productorders__ordered__gt=F('ppic_productorders__delivered'))&Q(ppic_productorders__sales_order__closed=False)).annotate(rest_order=Sum(
             'ppic_productorders__ordered')-Sum('ppic_productorders__delivered')).filter(Q(rest_order__isnull=False))
 
 class MaterialOrderedViewSet(ReadOnlyModelViewSet):
@@ -172,7 +172,7 @@ class MaterialOrderedViewSet(ReadOnlyModelViewSet):
     serializer_class = MaterialListSerializer
     queryset = Material.objects.prefetch_related(
         Prefetch(
-            'ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product'))).select_related('warehousematerial','uom','supplier').filter(ppic_materialorders__done=False,ppic_materialorders__ordered__gt=F('ppic_materialorders__arrived'),ppic_materialorders__purchase_order_material__done=False).annotate(rest_arrival=Sum(
+            'ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product'))).select_related('warehousematerial','uom','supplier').filter(ppic_materialorders__ordered__gt=F('ppic_materialorders__arrived'),ppic_materialorders__purchase_order_material__done=False).annotate(rest_arrival=Sum(
             'ppic_materialorders__ordered')-Sum('ppic_materialorders__arrived')).filter(Q(
                             rest_arrival__isnull=False))
 
@@ -397,8 +397,8 @@ class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
         a list for material requirement planning recommendation in material page 
         '''
 
-        sales_order = SalesOrder.objects.filter(fixed=True,done=False).prefetch_related(
-            Prefetch('productorder_set',queryset=ProductOrder.objects.filter(done=False).select_related('product').prefetch_related('product__ppic_process_related')))
+        sales_order = SalesOrder.objects.filter(fixed=True,closed=False).prefetch_related(
+            Prefetch('productorder_set',queryset=ProductOrder.objects.filter(delivered__lt=F('ordered')).select_related('product').prefetch_related('product__ppic_process_related')))
         
                 
         productList = Product.objects.prefetch_related(
@@ -406,7 +406,7 @@ class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
                 Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).prefetch_related(
                     Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','product','process'))).prefetch_related(
                         Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','material__supplier','material__uom','material__warehousematerial','process').prefetch_related(
-                            Prefetch('material__ppic_materialorder_related',queryset=MaterialOrder.objects.filter(done=False,ordered__gt=F('arrived')).select_related('material','purchase_order_material'))).prefetch_related(
+                            Prefetch('material__ppic_materialorder_related',queryset=MaterialOrder.objects.filter(ordered__gt=F('arrived')).select_related('material','purchase_order_material'))).prefetch_related(
                                 Prefetch('material__ppic_materialrequirementplanning_related',queryset=MaterialRequirementPlanning.objects.select_related('material').prefetch_related(
                                     Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product','mrp'))))))).order_by('-order'))).select_related('type','customer')
 
@@ -452,7 +452,6 @@ class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
                         tempMaterialOrder['arrived'] = materialOrder.arrived
                         tempMaterialOrder['material'] = materialOrder.material
                         tempMaterialOrder['purchase_order_material'] = materialOrder.purchase_order_material
-                        tempMaterialOrder['done'] = materialOrder.done
 
                         ppic_materialorder_related.append(tempMaterialOrder)
 
@@ -733,11 +732,14 @@ class UomManagementViewSet(CreateUpdateDeleteModelViewSet):
     queryset = UnitOfMaterial.objects.prefetch_related(Prefetch('material_set',queryset=Material.objects.select_related('supplier','warehousematerial')))
 
     def destroy(self, request, *args, **kwargs):
-        pk = kwargs['pk']
+        pk = int(kwargs['pk'])
         uom = get_object_or_404(self.queryset,pk=pk)
 
+        if pk == 1 or pk == 2 or pk ==4:
+            invalid('Tidak bisa menghapus unit material utama dalam sistem') 
+
         if uom.material_set.exists():
-            invalid('There is still material with this unit in database')
+            invalid('Masih ada material dengan unit tersebut di database')
 
         return super().destroy(request, *args, **kwargs)
 
@@ -798,7 +800,7 @@ class MaterialOrderReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     permission_classes = [PpicPermission]
     serializer_class = MaterialOrderReadOnlySerializer
-    queryset = MaterialOrder.objects.select_related('material','material__uom','material__supplier','purchase_order_material','purchase_order_material__supplier').filter(done=False)
+    queryset = MaterialOrder.objects.select_related('material','material__uom','material__supplier','purchase_order_material','purchase_order_material__supplier').filter(arrived__lt=F('ordered'))
 
 
 
@@ -809,7 +811,7 @@ class MaterialReceiptScheduleReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     permission_classes = [PpicPermission]
     serializer_class = MaterialReceiptScheduleReadOnlySerializer
-    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier').filter(Q(fulfilled_quantity__lte=0)&Q(material_order__done=False)).order_by('date')
+    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier').filter(Q(fulfilled_quantity__lte=0)&Q(material_order__arrived__lt=F('material_order__ordered'))).order_by('date')
 
 class DeliveryNoteMaterialReadOnlyViewSet(ReadOnlyModelViewSet):
     permission_classes = [PpicPermission]
@@ -868,7 +870,7 @@ class ProductOrderListViewSet(ReadOnlyModelViewSet):
     '''
     permission_classes = [PpicPermission]
     serializer_class = ProductOrderListSerializer
-    queryset   = ProductOrder.objects.select_related('product','sales_order','product__customer','product__type','sales_order__customer').filter(Q(done=False),Q(sales_order__fixed=True)&Q(sales_order__done=False))
+    queryset   = ProductOrder.objects.select_related('product','sales_order','product__customer','product__type','sales_order__customer').filter(Q(delivered__lt=F('ordered')),Q(sales_order__fixed=True)&Q(sales_order__closed=False))
 
 class DeliveryScheduleListViewSet(ReadOnlyModelViewSet):
     '''
@@ -876,7 +878,7 @@ class DeliveryScheduleListViewSet(ReadOnlyModelViewSet):
     '''
     permission_classes = [PpicPermission]
     serializer_class = DeliveryScheduleListSerializer
-    queryset = DeliverySchedule.objects.select_related('product_order','product_order__product','product_order__product__customer','product_order__product__type','product_order__sales_order','product_order__sales_order__customer').filter(Q(fulfilled_quantity__lte=0)&Q(product_order__done=False),Q(product_order__sales_order__fixed=True)&Q(product_order__sales_order__done=False)).order_by('date')
+    queryset = DeliverySchedule.objects.select_related('product_order','product_order__product','product_order__product__customer','product_order__product__type','product_order__sales_order','product_order__sales_order__customer').filter(Q(fulfilled_quantity__lte=0)&Q(product_order__delivered__lt=F('product_order__ordered')),Q(product_order__sales_order__fixed=True)&Q(product_order__sales_order__closed=False)).order_by('date')
 
 
 class DeliveryNoteCustomerReadOnlyViewSet(ReadOnlyModelViewSet):
@@ -1050,8 +1052,8 @@ class ProductionPriorityViewSet(ReadOnlyModelViewSet):
     @queryDebug
     def list(self, request, *args, **kwargs):
 
-        sales_order = SalesOrder.objects.filter(fixed=True,done=False).prefetch_related(
-            Prefetch('productorder_set',queryset=ProductOrder.objects.filter(done=False).select_related('product').prefetch_related('product__ppic_process_related')))
+        sales_order = SalesOrder.objects.filter(fixed=True,closed=False).prefetch_related(
+            Prefetch('productorder_set',queryset=ProductOrder.objects.filter(delivered__lt=F('ordered')).select_related('product').prefetch_related('product__ppic_process_related')))
 
         process_type_subcont = ProcessType.objects.get(pk=2)
         

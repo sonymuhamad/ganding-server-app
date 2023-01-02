@@ -1,7 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path,include
 from .views import *
-from ppic.views import MrpReadOnlyViewSet,MaterialListViewSet as MaterialList,DeliveryNoteMaterialReadOnlyViewSet,ReceiptNoteSubcontReadOnlyViewSet,DeliveryNoteSubcontReadOnlyViewSet
 
 router = DefaultRouter()
 
@@ -9,7 +8,7 @@ router = DefaultRouter()
 router.register(r'supplier',SupplierViewSet,basename='supplier')
 router.register(r'supplier-management',SupplierManagementViewSet,basename='supplier-management')  
 router.register(r'supplier-detail',SupplierReadOnlyViewSet,basename='supplier-detail')
-router.register(r'material-list',MaterialList,basename='material-list')
+router.register(r'material-list',MaterialDetailListViewSet,basename='material-list')
 
 router.register(r'supplier-material-list',MaterialListViewSet,basename='supplier-material-list')
 router.register(r'mrp',MrpReadOnlyViewSet,basename='mrp')
@@ -28,6 +27,7 @@ router.register(r'report-material-usage-and-order',MaterialUsageAndOrderViewSet,
 router.register(r'material-order-management',MaterialOrderManagementViewSet,basename='material-order-management')
 router.register(r'purchase-order-management',PurchaseOrderManagementViewSet,basename='purchase-order-management')
 router.register(r'status-purchase-order-management',StatusPurchaseOrderManagementViewSet,basename='status-purchase-order-management')
+router.register(r'close-purchase-order-management',CloseStatusPurchaseOrderViewSet,basename='close-purchase-order-management')
 
 urlpatterns = [
    path('',include(router.urls)),

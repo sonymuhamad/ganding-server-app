@@ -1,24 +1,26 @@
 from django.db import connection, reset_queries
 import time
 import functools
-from django.db.models import Prefetch,Count,Q,Sum,F
+from django.db.models import Prefetch,Count,Q,Sum,F,Avg
 
 from django.contrib.auth.models import User
 from rest_framework import response,status,permissions
-from rest_framework.viewsets import ModelViewSet,ReadOnlyModelViewSet,GetModelViewSet,CreateUpdateDeleteModelViewSet,UpdateModelViewSet,RetrieveModelViewSet,CreateModelViewSet
+from rest_framework.viewsets import ReadOnlyModelViewSet,GetModelViewSet,CreateUpdateDeleteModelViewSet,UpdateModelViewSet,RetrieveModelViewSet
 
-from marketing.models import Customer, SalesOrder
-from purchasing.models import Supplier,PurchaseOrderMaterial
+from marketing.models import Customer
+from purchasing.models import Supplier
 from .serializer import  *
-from .shortcuts import get_default_password,filter_helper_app_label,get_key
+from .shortcuts import get_default_password,filter_helper_app_label,get_key,date_last_week
 from django.shortcuts import get_object_or_404
 
-from ppic.models import DeliveryNoteCustomer, DetailMrp, MaterialRequirementPlanning, ProductDeliverCustomer,ProductOrder,Product,MaterialOrder, WarehouseProduct,Process,MaterialReceipt,SubcontReceipt
+from ppic.models import DeliveryNoteCustomer,  ProductDeliverCustomer,ProductOrder,Product,MaterialOrder,MaterialReceipt,SubcontReceipt,ProductionReport,DeliveryNoteMaterial,MaterialProductionReport,ProductProductionReport
+
 from .permissions import ManagerPermission,CanManageUser
 from datetime import date
 from dateutil import rrule
+from dateutil.relativedelta import relativedelta
 
-from ppic.serializer import ProductOrderListSerializer,ProductDeliverCustomerReadOnlySerializer,MaterialOrderReadOnlySerializer,MaterialReceiptReadOnlySerializer
+from ppic.serializer import ProductOrderListSerializer,ProductDeliverCustomerReadOnlySerializer,MaterialOrderReadOnlySerializer,MaterialReceiptReadOnlySerializer,DeliveryNoteCustomerReadOnlySerializer,DeliveryNoteMaterialReadOnlySerializer,ProductionReportReadOnlySerializer
 
 def queryDebug(func):
 
@@ -71,55 +73,24 @@ class UserManagementViewSet(CreateUpdateDeleteModelViewSet):
         instance.password = password
         serializer = self.get_serializer(instance)
         return response.Response(serializer.data)
-    
-    
 
-class ReportMrpViewSet(GetModelViewSet):
+class DeliveryNoteCustomerReadOnlyViewSet(GetModelViewSet):
     '''
-    plant manager -> material requirement planning report
+    a viewset class for get this week delivery note
     '''
-    serializer_class = ReportMrpSerializer
     permission_classes = [ManagerPermission]
-    queryset = MaterialRequirementPlanning.objects.select_related('material').prefetch_related(
-        Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product')))
+    serializer_class = DeliveryNoteCustomerReadOnlySerializer
+    queryset = DeliveryNoteCustomer.objects.filter(date__range=(date_last_week,date.today())).prefetch_related(
+            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order','schedules','delivery_note_customer','delivery_note_customer__customer','delivery_note_customer__vehicle','delivery_note_customer__driver','schedules__product_order'))).select_related('customer','vehicle','driver')
 
-    
-class ReportSupplierPurchaseOrderViewSet(GetModelViewSet):
+class DeliveryNoteMaterialReadOnlyViewSet(GetModelViewSet):
     '''
-    plant manager -> schedule material receipt report
+    a viewset class gor get this week receipt note material
     '''
-    serializer_class = SupplierSerializer
     permission_classes = [ManagerPermission]
-    queryset = Supplier.objects.prefetch_related(
-        Prefetch('purchasing_purchaseordermaterial_related',queryset=PurchaseOrderMaterial.objects.prefetch_related(
-            Prefetch('materialorder_set',queryset=MaterialOrder.objects.prefetch_related('materialreceiptschedule_set').select_related('material__uom')))))
-    
-class ReportCustomerSalesOrderViewSet(ReadOnlyModelViewSet):
-    '''
-    plant manager -> sales report -> sales order
-    '''
-    
-    serializer_class = CustomerSalesOrderSerializer
-    permission_classes = [ManagerPermission]
-    queryset = Customer.objects.prefetch_related(
-        Prefetch('marketing_salesorder_related',queryset=SalesOrder.objects.prefetch_related(
-            Prefetch('productorder_set',queryset=ProductOrder.objects.prefetch_related(
-                Prefetch('product',queryset=Product.objects.prefetch_related(
-                        Prefetch('ppic_process_related',queryset=Process.objects.prefetch_related(Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type'))))).prefetch_related(Prefetch('ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type')))))))))
-
-
-class ReportDeliveryNoteCustomerViewSet(ReadOnlyModelViewSet):
-    '''
-    plant manager -> sales report -> delivery note
-    '''
-    serializer_class = CustomerDeliveryNoteSerializer
-    permission_classes = [ManagerPermission]
-    queryset = Customer.objects.prefetch_related(
-        Prefetch('ppic_deliverynotecustomer_related',queryset=DeliveryNoteCustomer.objects.prefetch_related(
-            Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.prefetch_related(
-                Prefetch('product_order',queryset=ProductOrder.objects.select_related('product','sales_order'))))).select_related('driver','vehicle')))
-
-    
+    serializer_class = DeliveryNoteMaterialReadOnlySerializer
+    queryset = DeliveryNoteMaterial.objects.filter(date__range=(date_last_week,date.today())).prefetch_related(
+            Prefetch('materialreceipt_set',queryset=MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier','delivery_note_material','delivery_note_material__supplier'))).select_related('supplier')
 
 class UserReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
@@ -305,7 +276,7 @@ class ReportProductOrderReadOnlyViewSet(GetModelViewSet):
     '''
     permission_classes = [ManagerPermission]
     serializer_class = ReportOrderEachMonthReadOnlySerializer
-    queryset = ProductOrder.objects.filter(Q(sales_order__done=True)|Q(sales_order__fixed=True),sales_order__date__lte=date.today()).values('sales_order__date__year','sales_order__date__month').annotate(total_order=Sum('ordered')).order_by('sales_order__date__year','sales_order__date__month')
+    queryset = ProductOrder.objects.filter(Q(sales_order__fixed=True),sales_order__date__lte=date.today()).values('sales_order__date__year','sales_order__date__month').annotate(total_order=Sum('ordered')).order_by('sales_order__date__year','sales_order__date__month')
 
     def generate_date_from_queryset(self) -> dict:
 
@@ -423,7 +394,7 @@ class ReportProductInProgressReadOnlyViewSet(GetModelViewSet):
     '''
     permission_classes = [ManagerPermission]
     serializer_class = ProductOrderListSerializer
-    queryset = ProductOrder.objects.filter(Q(done=False),Q(sales_order__fixed=True)&Q(sales_order__done=False)).order_by('pk')
+    queryset = ProductOrder.objects.select_related('product','sales_order','product__customer','product__type','sales_order__customer').filter(Q(delivered__lt=F('ordered')),Q(sales_order__fixed=True)&Q(sales_order__closed=False)).order_by('pk')
 
 
 class ReportProductDeliverCustomerReadOnlyViewSet(GetModelViewSet):
@@ -445,6 +416,11 @@ class ReportMaterialOrderReadOnlyViewSet(GetModelViewSet):
     queryset = MaterialOrder.objects.values('purchase_order_material__date__year','purchase_order_material__date__month').annotate(total_order=Sum('ordered')).order_by('purchase_order_material__date__year','purchase_order_material__date__month')
     storage_data = {}
     final_data = []
+
+    def __init__(self, **kwargs) -> None:
+        self.storage_data = {}
+        self.final_data = []
+        super().__init__(**kwargs)
 
     def generate_from_queryset(self):
 
@@ -551,7 +527,7 @@ class ReportSupplierOrderReadOnlyViewSet(GetModelViewSet):
     a viewset for get list of supplier, and its total material order and the most ordered material, then sort by total material order
     '''
     serializer_class = ReportSupplierOrderReadOnlySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [ManagerPermission]
     queryset = Supplier.objects.annotate(supplier_total_order=Sum('ppic_materials__ppic_materialorders__ordered',default=0)).prefetch_related(
         Prefetch('ppic_material_related',queryset=Material.objects.select_related('uom','supplier').annotate(total_order=Sum('ppic_materialorders__ordered',default=0)).order_by('-total_order'))).order_by('-supplier_total_order')
 
@@ -585,6 +561,124 @@ class ReportSupplierOrderReadOnlyViewSet(GetModelViewSet):
     def list(self, request, *args, **kwargs):
 
         return self.generate_data_from_queryset()
+
+
+class ReportProductionReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset class for get data total quantity production, and total quantity not good production each month
+    '''
+    serializer_class = ReportProductionReadOnlySerializer
+    permission_classes = [ManagerPermission]
+    queryset = ProductionReport.objects.filter(date__lte=date.today()).values('date__year','date__month').annotate(total_good_production=Sum('quantity',default=0,filter=Q(process__warehouseproduct__warehouse_type__id__contains=1))).annotate(total_not_good_production=Sum('quantity_not_good',default=0)).order_by('date__year','date__month')
+
+    storage_data = []
+
+    def loop_through_dates(self,first_date,last_date,store_data):
+
+        for dt in rrule.rrule(rrule.MONTHLY,dtstart=first_date,until=last_date):
+            
+            data_production = store_data.get(dt.date(),{
+                "total_good_production":0,
+                "total_not_good_production":0
+            })
+
+            temp_data = {
+                'production_date':dt.date(),
+                **data_production
+            }
+            
+            self.storage_data.append(temp_data)
+            
+            ### append each data to storage data before return all data
+
+        return
+
+    def generate_queryset(self,queryset) -> dict:
+        
+        ## set dates to key of dictionary, and set data total productions as value
+
+        store_data = {}
+        for data in queryset:
+            year = data['date__year']
+            month = data['date__month']
+            each_date = date(year,month,1)
+
+            store_data[each_date] = {
+                'total_good_production':data['total_good_production'],
+                'total_not_good_production':data['total_not_good_production']
+            }
+            
+        return store_data
+
+    def generate_data_and_return_from_queryset(self):
+        
+        queryset = self.filter_queryset(self.get_queryset())
+        first_data = queryset.first()
+        last_data = queryset.last()
+
+        if first_data:
+            # if data is exists then do generate, else return empty array(list)
+
+            first_year = first_data['date__year']
+            first_month = first_data['date__month']
+            first_date = date(first_year,first_month,1)
+
+            last_year = last_data['date__year']
+            last_month = last_data['date__month']
+            last_date = date(last_year,last_month,1)
+
+            store_data = self.generate_queryset(queryset)
+            self.loop_through_dates(first_date,last_date,store_data)
+
+        serializer = self.get_serializer(self.storage_data,many=True)
+
+        return  response.Response(serializer.data)
+
+    def list(self, request, *args, **kwargs):
+
+        return self.generate_data_and_return_from_queryset()
+
+
+class OperatorReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset class for get all data operator, avg production, good percentage of production, and times do production
+    '''
+    serializer_class = OperatorReadOnlySerializer
+    permission_classes = [ManagerPermission]
+    queryset = Operator.objects.annotate(times_do_production=Count('productionreport',distinct=True),avg_production=Avg('productionreport__quantity'),good_percentage=(Sum('productionreport__quantity') / (Sum('productionreport__quantity')+Sum('productionreport__quantity_not_good'))) * 100,total_goods_produced=Sum('productionreport__quantity')  )
+
+
+class MachineReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset class for get all data machine, avg production, goods percentage of production, and times used in production
+    '''
+    serializer_class = MachineReadOnlySerializer
+    permission_classes = [ManagerPermission]
+    queryset = Machine.objects.prefetch_related('productionreport_set').annotate(times_do_production=Count('productionreport',distinct=True),avg_production=Avg('productionreport__quantity'),good_percentage=(Sum('productionreport__quantity')/(Sum('productionreport__quantity')+Sum('productionreport__quantity_not_good'))) * 100,total_goods_produced=Sum('productionreport__quantity') )
+
+
+class ProductionReportReadOnlyViewSet(GetModelViewSet):
+    '''
+    a viewset for get data of production this week
+    '''
+    serializer_class = ProductionReportReadOnlySerializer
+    permission_classes = [ManagerPermission]
+    queryset = ProductionReport.objects.filter(date__range=(date_last_week,date.today())).prefetch_related(
+        Prefetch('productproductionreport_set',ProductProductionReport.objects.select_related('product','product__customer','product__type')),
+        Prefetch('materialproductionreport_set',MaterialProductionReport.objects.select_related('material','material__uom','material__supplier'))).select_related('operator','machine','product','product__customer','product__type','process','process__product','process__process_type')
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -1,5 +1,7 @@
 from rest_framework.serializers import ValidationError
 from django.contrib.auth.hashers import make_password
+from datetime import date
+from dateutil.relativedelta import relativedelta
 from django.utils.translation import gettext_lazy as _
 
 def invalid(massage='delete failed due to data integrity') -> None:
@@ -31,3 +33,5 @@ def get_key(val):
             return key
 
     return "key doesn't exist"
+
+date_last_week = date.today()-relativedelta(weeks=2)

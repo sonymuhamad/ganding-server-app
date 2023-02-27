@@ -102,7 +102,7 @@ class SupplierListSerializer(ModelSerializer):
 class WarehouseProductReadOnlySerializer(ModelSerializer):
     class Meta:
         model = WarehouseProduct
-        fields = ['id','quantity','warehouse_type']
+        fields = ['id','quantity','warehouse_type','process','product']
         depth = 1
 
 class MaterialProductionSerializer(ModelSerializer):
@@ -325,6 +325,7 @@ class ProcessPartialManagementSerializer(ModelSerializer):
 
     requirementproduct_set = RequirementProductManagement(many=True)
     requirementmaterial_set = RequirementMaterialManagementSerializer(many=True)
+    warehouseproduct_set = WarehouseProductReadOnlySerializer(many=True,read_only=True)
 
     def search(self,product_in_process,manyProcess):
 
@@ -637,15 +638,6 @@ class WarehouseMaterialReadOnlySerializer(ModelSerializer):
         model = WarehouseMaterial
         exclude  = ['material']
 
-class MaterialDetailSerializer(ModelSerializer):
-    ppic_requirementmaterial_related = RequirementReadOnlySerializer(many=True)
-    warehousematerial = WarehouseMaterialReadOnlySerializer()
-    uom = PrimaryKeyRelatedField(read_only=True)
-    class Meta:
-        model = Material
-        fields = '__all__'
-        depth = 1
-
 class MaterialListSerializer(ModelSerializer):
     ppic_requirementmaterial_related = RequirementReadOnlySerializer(many=True)
     warehousematerial = WarehouseMaterialReadOnlySerializer()
@@ -654,12 +646,6 @@ class MaterialListSerializer(ModelSerializer):
         model = Material
         fields = '__all__'
         depth = 1
-
-class MaterialSupplierReadOnlySerializer(ModelSerializer):
-    ppic_material_related = MaterialListSerializer(many=True)
-    class Meta:
-        model = Supplier
-        fields = '__all__'
 
 #### material read only seriz
 #########
@@ -985,7 +971,7 @@ class MaterialReceiptManagementSerializer(ModelSerializer):
         supplierPurchaseOrder = attrs['material_order'].purchase_order_material.supplier
         material = attrs['material_order'].material
 
-        if supplierPurchaseOrder is not supplierDeliveryNoteMaterial or material.supplier is not supplierDeliveryNoteMaterial:
+        if supplierPurchaseOrder != supplierDeliveryNoteMaterial or material.supplier != supplierDeliveryNoteMaterial:
             invalid(f'{material.name} is not belongs to {supplierDeliveryNoteMaterial.name}')
 
         return super().validate(attrs)
@@ -1974,6 +1960,10 @@ class ReceiptSubcontScheduleManagementSerializer(ModelSerializer):
 
         return super().validate(attrs)
 
+    def update(self, instance, validated_data):
+        if instance.fulfilled_quantity > 0:
+            invalid('Jadwal tersebut sudah selesai')
+        return super().update(instance, validated_data)
 
 class DeliveryScheduleListSerializer(ModelSerializer):
     '''

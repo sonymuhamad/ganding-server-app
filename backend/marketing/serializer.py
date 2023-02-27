@@ -127,7 +127,7 @@ class SalesOrderManagementSerializer(ModelSerializer):
     a serializer class for management sales order
     '''
     
-    description = serializers.CharField(allow_blank=True)
+    description = serializers.CharField(allow_blank=True,default='')
 
     def update(self, instance, validated_data):
         

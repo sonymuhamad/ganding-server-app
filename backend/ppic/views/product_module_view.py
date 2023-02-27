@@ -6,11 +6,11 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch,F,Count,Sum
 
 from manager.shortcuts import invalid
-from utils import MultipartJsonParser
+from ppic.utils import MultipartJsonParser
 from ppic.permissions import CanManageProduct,PpicPermission
 
-from ppic.models import Product,Material,ProductOrder,Process,WarehouseProduct,RequirementMaterial,RequirementProduct,ProcessType,ProductType,WarehouseType
-from ppic.serializer import ProductReadOnlySerializer,ProductTypeSerializer,ProcessTypeSerializer,ProductListSerializer,MaterialListSerializer,CustomerListSerializer,ProductManagementSerializer,ProductDetailSerializer,ProcessPartialManagementSerializer
+from ppic.models import Product,ProductOrder,Process,WarehouseProduct,RequirementMaterial,RequirementProduct,ProcessType,ProductType,WarehouseType
+from ppic.serializer import ProductReadOnlySerializer,ProductTypeSerializer,ProcessTypeSerializer,ProductListSerializer,CustomerListSerializer,ProductManagementSerializer,ProductDetailSerializer,ProcessPartialManagementSerializer
 
 from marketing.models import Customer
 
@@ -46,6 +46,9 @@ class ProductTypeManagementViewSet(CreateUpdateDeleteModelViewSet):
     queryset = ProductType.objects.all()
     
     def destroy(self, request, *args, **kwargs):
+        '''
+        function for delete product type return response object
+        '''
         pk = kwargs['pk']
         product_type = get_object_or_404(self.queryset,pk=pk)
 

@@ -3,9 +3,9 @@ from django.db.models import Prefetch,F,Q
 from rest_framework import response
 from datetime import date
 
-from permissions import ManagerPermission
-from shortcuts import date_last_week
-from serializer import PercentageSerializer
+from manager.permissions import ManagerPermission
+from manager.shortcuts import date_last_week
+from manager.serializer import PercentageSerializer
 
 from ppic.models import DeliveryNoteCustomer,ProductDeliverCustomer,DeliveryNoteMaterial,MaterialReceipt,ProductionReport,MaterialProductionReport,ProductProductionReport,SubcontReceipt
 from ppic.serializer import DeliveryNoteCustomerReadOnlySerializer,ProductionReportReadOnlySerializer,DeliveryNoteMaterialReadOnlySerializer

@@ -3,11 +3,11 @@ from rest_framework import response,status
 from django.contrib.auth.models import User,Group,Permission
 
 from manager.permissions import ManagerPermission,CanManageUser
-from serializer import UserManagementSerializer,UserReadOnlySerializer,GroupReadOnlySerializer,UserGroupManagementSerializer,PermissionReadOnlySerializer
+from manager.serializer import UserManagementSerializer,UserReadOnlySerializer,GroupReadOnlySerializer,UserGroupManagementSerializer,PermissionReadOnlySerializer
 
 from django.db.models import Prefetch,Count,Q
 from django.shortcuts import get_object_or_404
-from shortcuts import get_key,invalid,get_default_password,filter_helper_app_label
+from manager.shortcuts import get_key,invalid,get_default_password,filter_helper_app_label
 
 
 

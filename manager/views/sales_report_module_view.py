@@ -10,8 +10,7 @@ from manager.serializer import ReportOrderEachMonthReadOnlySerializer,ReportCust
 
 from marketing.models import Customer
 
-from ppic.serializer import ProductOrderListSerializer,ProductDeliverCustomerReadOnlySerializer
-from ppic.models import ProductOrder,ProductDeliverCustomer,Product
+from ppic.models import ProductOrder,Product
 
 
 
@@ -70,7 +69,8 @@ class ReportCustomerAndOrderedProductViewSet(GetModelViewSet):
     '''
     permission_classes = [ManagerPermission]
     serializer_class = ReportCustomerOrderReadOnlySerializer
-    queryset = Customer.objects.annotate(customer_total_order=Sum('ppic_products__ppic_productorders__ordered',filter=Q(ppic_products__ppic_productorders__sales_order__fixed=True),default=0)).prefetch_related(Prefetch('ppic_product_related',queryset=Product.objects.select_related('customer','type').annotate(total_order=Sum('ppic_productorders__ordered',filter=Q(ppic_productorders__sales_order__fixed=True),default=0)).order_by('-total_order'))).order_by('-customer_total_order')
+    queryset = Customer.objects.annotate(customer_total_order=Sum('ppic_products__ppic_productorders__ordered',filter=Q(ppic_products__ppic_productorders__sales_order__fixed=True),default=0)).prefetch_related(
+        Prefetch('ppic_product_related',queryset=Product.objects.select_related('customer','type').annotate(total_order=Sum('ppic_productorders__ordered',filter=Q(ppic_productorders__sales_order__fixed=True),default=0)).order_by('-total_order'))).order_by('-customer_total_order')
 
     def generate_data_from_queryset(self):
 
@@ -97,21 +97,3 @@ class ReportCustomerAndOrderedProductViewSet(GetModelViewSet):
 
         serializer = self.get_serializer(validate_data,many=True)
         return response.Response(serializer.data)
-
-
-class ReportProductInProgressReadOnlyViewSet(GetModelViewSet):
-    '''
-    a viewset for get list of product in order
-    '''
-    permission_classes = [ManagerPermission]
-    serializer_class = ProductOrderListSerializer
-    queryset = ProductOrder.objects.select_related('product','sales_order','product__customer','product__type','sales_order__customer').filter(Q(delivered__lt=F('ordered')),Q(sales_order__fixed=True)&Q(sales_order__closed=False)).order_by('pk')
-
-
-class ReportProductDeliverCustomerReadOnlyViewSet(GetModelViewSet):
-    '''
-    a viewset for get list of product delivery and show its timeliness on react (frontend)
-    '''
-    permission_classes = [ManagerPermission]
-    serializer_class = ProductDeliverCustomerReadOnlySerializer
-    queryset = ProductDeliverCustomer.objects.select_related('delivery_note_customer','product_order','delivery_note_customer__customer','delivery_note_customer__vehicle','delivery_note_customer__driver','product_order__product','product_order__sales_order','schedules','schedules__product_order')

@@ -2,13 +2,14 @@ from rest_framework.serializers import ModelSerializer,StringRelatedField,Intege
 from oauth2_provider.models import AccessToken
 from django.contrib.auth.models import User,Group,Permission
 
-from ppic.models import MaterialRequirementPlanning,DetailMrp,Product,WarehouseProduct,Process,ProductOrder,Material,MaterialOrder,MaterialReceiptSchedule,DeliveryNoteCustomer,ProductDeliverCustomer,Operator,Machine
+from ppic.models import Material,MaterialOrder,MaterialReceiptSchedule,Operator,Machine
 
-from marketing.models import SalesOrder,Customer
+from marketing.models import Customer
 
 from purchasing.models import Supplier,PurchaseOrderMaterial
-from .shortcuts import invalid,get_default_password
-from ppic.serializer import ProductListSerializer,MaterialListReadOnlySerializer
+from .shortcuts import get_default_password
+from ppic.serializers.product_serializer import OneDepthProductNestedWarehouseSerializer
+from ppic.serializers.material_serializer import OneDepthMaterialNestedWarehouseSerializer
 from math import ceil
 
 
@@ -17,11 +18,13 @@ class GroupSerializer(ModelSerializer):
     '''
     a serializer for get nested groups from each user
     '''
+    
     class Meta:
         model = Group
         fields = ['id','name']
 
 class AccessTokenSerializer(ModelSerializer):
+    
     class Meta:
         model = AccessToken
         fields = ['token','expires','scope','created']
@@ -38,6 +41,7 @@ class PermissionReadOnlySerializer(ModelSerializer):
     '''
     nested serializer for permission from user
     '''
+    
     class Meta:
         model = Permission
         fields = '__all__'
@@ -49,6 +53,7 @@ class UserReadOnlySerializer(ModelSerializer):
     '''
     groups = GroupSerializer(many=True)
     user_permissions = PermissionReadOnlySerializer(many=True)
+    
     class Meta:
         model = User
         fields = ['id','last_login','username','email','groups','user_permissions']
@@ -74,6 +79,7 @@ class UserGroupManagementSerializer(ModelSerializer):
     '''
     a serializer for add,and delete group from user
     '''
+
     class Meta:
         model = Group
         fields = '__all__'
@@ -94,6 +100,7 @@ class GroupReadOnlySerializer(ModelSerializer):
     '''
     number_of_user = IntegerField(read_only=True)
     user_set = UserListSerializer(many=True)
+
     class Meta:
         model = Group
         fields = '__all__'
@@ -109,6 +116,7 @@ class MaterialReceiptScheduleSerializer(ModelSerializer):
 
 class MaterialSerializer(ModelSerializer):
     uom = StringRelatedField()
+
     class Meta:
         model = Material
         fields = ['name','weight','image','spec','length','width','thickness','uom']
@@ -116,6 +124,7 @@ class MaterialSerializer(ModelSerializer):
 class MaterialOrderSerializer(ModelSerializer):
     material = MaterialSerializer()
     materialreceiptschedule_set = MaterialReceiptScheduleSerializer(many=True)
+    
     class Meta:
         model = MaterialOrder
         fields = ['ordered','arrived','material','materialreceiptschedule_set']
@@ -152,7 +161,8 @@ class ReportCustomerOrderReadOnlySerializer(ModelSerializer):
     sort by total product order
     '''
     customer_total_order = IntegerField()
-    most_ordered_product = ProductListSerializer(read_only=True)
+    most_ordered_product = OneDepthProductNestedWarehouseSerializer(read_only=True)
+    
     class Meta:
         model = Customer
         fields = '__all__'
@@ -172,7 +182,7 @@ class ReportSupplierOrderReadOnlySerializer(ModelSerializer):
     a serializer class for get all supplier and its total material order, and what is the most ordered material, then sort by total material order
     '''
     supplier_total_order = IntegerField()
-    most_ordered_material = MaterialListReadOnlySerializer(read_only=True)
+    most_ordered_material = OneDepthMaterialNestedWarehouseSerializer(read_only=True)
     
     class Meta:
         model = Supplier
@@ -230,8 +240,7 @@ class MachineReadOnlySerializer(ModelSerializer):
         ret['avg_production'] = ceil(ret['avg_production'])
 
         return ret
-
-
+    
     class Meta:
         model = Machine
         fields = '__all__'

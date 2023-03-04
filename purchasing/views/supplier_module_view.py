@@ -4,7 +4,6 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch,Count
 
 from purchasing.permissions import PurchasingPermission,CanManageSupplier
-from purchasing.serializer import BaseSupplierSerializer,SupplierReadOnlySerializer
 from purchasing.models import Supplier,PurchaseOrderMaterial
 
 from purchasing.shortcuts import validate_po
@@ -12,7 +11,7 @@ from manager.shortcuts import invalid
 
 from ppic.models import Material,MaterialOrder
 
-
+from purchasing.serializers.supplier_serializer import BaseSupplierSerializer,SupplierNestedPurchaseOrderSerializer
 
 class SupplierManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
@@ -47,7 +46,6 @@ class SupplierManagementViewSet(CreateUpdateDeleteModelViewSet):
 
 
 class SupplierViewSet(ReadOnlyModelViewSet):
-    permission_classes = [PurchasingPermission]
     serializer_class = BaseSupplierSerializer
     queryset = Supplier.objects.annotate(number_of_material=Count(
         'ppic_materials',distinct=True)).annotate(number_of_purchase_order=Count(
@@ -59,9 +57,10 @@ class SupplierReadOnlyViewSet(RetrieveModelViewSet):
     a viewset for retrieve detail supplier nested to material, purchase order -> material order
     '''
     permission_classes = [PurchasingPermission]
-    serializer_class = SupplierReadOnlySerializer
-    queryset = Supplier.objects.prefetch_related(Prefetch(
-        'ppic_material_related',queryset=Material.objects.select_related('uom','supplier','warehousematerial')),Prefetch(
-            'purchasing_purchaseordermaterial_related',queryset=PurchaseOrderMaterial.objects.prefetch_related(Prefetch(
+    serializer_class = SupplierNestedPurchaseOrderSerializer
+    queryset = Supplier.objects.prefetch_related(
+        Prefetch('ppic_material_related',queryset=Material.objects.select_related('uom','supplier','warehousematerial')),Prefetch(
+            'purchasing_purchaseordermaterial_related',queryset=PurchaseOrderMaterial.objects.prefetch_related(
+        Prefetch(
                 'materialorder_set',queryset=MaterialOrder.objects.select_related('material','purchase_order_material','material__uom','material__supplier')))))
 

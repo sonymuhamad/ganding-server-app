@@ -2,14 +2,13 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.response import Response
 
 from django.db.models import Q,Sum
-
-from purchasing.serializer import MaterialUsageAndOrderSerializer
-from purchasing.permissions import PurchasingPermission
+from dateutil import rrule
+from datetime import date
 
 from ppic.models import Material
 
-from dateutil import rrule
-from datetime import date
+from purchasing.permissions import PurchasingPermission
+from purchasing.serializers.purchase_order_serializer import MaterialUsageAndOrderSerializer
 
 
 class MaterialUsageAndOrderViewSet(ReadOnlyModelViewSet):

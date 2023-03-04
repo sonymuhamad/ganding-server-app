@@ -7,8 +7,11 @@ from manager.shortcuts import invalid
 from ppic.permissions import PpicPermission,CanManageWarehouse
 from ppic.models import WarehouseMaterial,WarehouseProduct,WarehouseType,UnitOfMaterial,Material,ReceiptNoteSubcont,MaterialOrder,DeliveryNoteMaterial,MaterialReceipt,SubcontReceipt,MaterialReceiptSchedule,ReceiptSubcontSchedule,ProductDeliverSubcont
 
-from ppic.serializer import WarehouseTypeReadOnlySerializer,UomWarehouseMaterialSerializer,WarehouseProductManagementSerializer,WarehouseMaterialManagementSerializer,ReceiptNoteSubcontManagementSerializer,ReceiptNoteSubcontReadOnlySerializer,DeliveryNoteMaterialManagementSerializer,DeliveryNoteMaterialReadOnlySerializer,MaterialReceiptManagementSerializer,MaterialOrderReadOnlySerializer,ProductDeliverSubcontListSerializer,MaterialReceiptScheduleReadOnlySerializer,SubcontReceiptManagementSerializer,ReceiptSubcontScheduleListSerializer
+from ppic.serializers.material_serializer import UnitOfMaterialNestedSerializer
+from ppic.serializers.warehouse_serializer import WarehouseMaterialManagementSerializer,WarehouseTypeReadOnlySerializer,WarehouseProductManagementSerializer,ThreeDepthReceiptSubcontScheduleSerializer,ThreeDepthMaterialReceiptScheduleSerializer,OneDepthReceiptNoteSubcontSerializer,BaseReceiptNoteSubcontSerializer,DeliveryNoteMaterialSerializer,DeliveryNoteMaterialReadOnlySerializer,SubcontReceiptManagementSerializer,MaterialReceiptManagementSerializer
 
+from ppic.serializers.delivery_serializer import OneDepthProductDeliverSubcontSerializer
+from purchasing.serializers.purchase_order_serializer import TwoDepthMaterialOrderSerializer
 
 class WarehouseWipViewSet(GetModelViewSet):
     '''
@@ -51,37 +54,18 @@ class UomWarehouseMaterialViewSet(ReadOnlyModelViewSet):
     uom -> material -> stock in warehouse material
     '''
     permission_classes = [PpicPermission]
-    serializer_class = UomWarehouseMaterialSerializer
-    queryset = UnitOfMaterial.objects.prefetch_related(Prefetch('material_set',queryset=Material.objects.select_related('supplier','warehousematerial'))).annotate(amount_of_material=Count('material'))
-
-
-class ReceiptSubcontScheduleListViewSet(ReadOnlyModelViewSet):
-    '''
-    a viewset for get all arrival schedule of product subconstruction
-    '''
-    permission_classes = [PpicPermission]
-    serializer_class = ReceiptSubcontScheduleListSerializer
-    queryset = ReceiptSubcontSchedule.objects.select_related('product_subcont','product_subcont__deliver_note_subcont','product_subcont__process','product_subcont__product','product_subcont__deliver_note_subcont__supplier','product_subcont__deliver_note_subcont__driver','product_subcont__deliver_note_subcont__vehicle','product_subcont__product__customer','product_subcont__product__type','product_subcont__process__process_type','product_subcont__process__product').annotate(received=Sum('product_subcont__subcontreceipt__quantity')).filter(Q(fulfilled_quantity=0),Q(received__lt=F('product_subcont__quantity')) |Q(received=None) )
-
-
-class MaterialReceiptScheduleReadOnlyViewSet(ReadOnlyModelViewSet):
-    '''
-    a read only view set for schedule material receipt
-    '''
-    permission_classes = [PpicPermission]
-    serializer_class = MaterialReceiptScheduleReadOnlySerializer
-    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier').filter(Q(fulfilled_quantity__lte=0)&Q(material_order__arrived__lt=F('material_order__ordered'))).order_by('date')
-
+    serializer_class = UnitOfMaterialNestedSerializer
+    queryset = UnitOfMaterial.objects.prefetch_related(
+        Prefetch('material_set',queryset=Material.objects.get_queryset_related())).annotate(amount_of_material=Count('material'))
 
 class ReceiptNoteSubcontManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
     a view set for management receipt note subcont
     '''
     permission_classes = [PpicPermission,CanManageWarehouse]
-    serializer_class = ReceiptNoteSubcontManagementSerializer
+    serializer_class = BaseReceiptNoteSubcontSerializer
     queryset = ReceiptNoteSubcont.objects.prefetch_related('subcontreceipt_set').select_related('supplier')
 
-    
     def update(self, request, *args, **kwargs):
         
         instance = self.get_object()
@@ -105,8 +89,7 @@ class ReceiptNoteSubcontReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     a viewset for get and retrieve receipt note subcont nested to product that received
     '''
-    permission_classes = [PpicPermission]
-    serializer_class = ReceiptNoteSubcontReadOnlySerializer
+    serializer_class = OneDepthReceiptNoteSubcontSerializer
     queryset = ReceiptNoteSubcont.objects.prefetch_related(
         Prefetch('subcontreceipt_set',queryset=SubcontReceipt.objects.select_related('product_subcont','receipt_note','schedules','product_subcont__product','product_subcont__process','product_subcont__deliver_note_subcont','product_subcont__product__customer','product_subcont__product__type','product_subcont__process__product','product_subcont__process__process_type','product_subcont__deliver_note_subcont__driver','product_subcont__deliver_note_subcont__vehicle','product_subcont__deliver_note_subcont__supplier','schedules__product_subcont','schedules__product_subcont__product','schedules__product_subcont__process','schedules__product_subcont__deliver_note_subcont','receipt_note__supplier'))).select_related('supplier')
 
@@ -115,7 +98,7 @@ class DeliveryNoteMaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
     a view set for cud receipt NOTE material
     '''
     permission_classes = [PpicPermission,CanManageWarehouse]
-    serializer_class = DeliveryNoteMaterialManagementSerializer
+    serializer_class = DeliveryNoteMaterialSerializer
     queryset = DeliveryNoteMaterial.objects.select_related('supplier').prefetch_related('materialreceipt_set')
 
     def update(self, request, *args, **kwargs):
@@ -136,21 +119,10 @@ class DeliveryNoteMaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
         
         return super().destroy(request, *args, **kwargs)
 
-
 class DeliveryNoteMaterialReadOnlyViewSet(ReadOnlyModelViewSet):
-    permission_classes = [PpicPermission]
     serializer_class = DeliveryNoteMaterialReadOnlySerializer
     queryset = DeliveryNoteMaterial.objects.prefetch_related(
             Prefetch('materialreceipt_set',queryset=MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier','delivery_note_material','delivery_note_material__supplier'))).select_related('supplier')
-
-class ProductDeliverSubcontListViewSet(ReadOnlyModelViewSet):
-    '''
-    a view set to get all list of product that in subconstruction
-    '''
-    permission_classes = [PpicPermission]
-    serializer_class = ProductDeliverSubcontListSerializer
-    queryset = ProductDeliverSubcont.objects.prefetch_related('subcontreceipt_set').select_related('deliver_note_subcont','process','product').annotate(received=Sum('subcontreceipt__quantity')).filter(Q(received__lt=F('quantity'))|Q(received=None))
-
 
 class SubcontReceiptManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
@@ -171,14 +143,6 @@ class SubcontReceiptManagementViewSet(CreateUpdateDeleteModelViewSet):
 
         return super().destroy(request, *args, **kwargs)
 
-class MaterialOrderReadOnlyViewSet(ReadOnlyModelViewSet):
-    '''
-    a viewset for get material order list
-    '''
-    permission_classes = [PpicPermission]
-    serializer_class = MaterialOrderReadOnlySerializer
-    queryset = MaterialOrder.objects.select_related('material','material__uom','material__supplier','purchase_order_material','purchase_order_material__supplier').filter(arrived__lt=F('ordered'))
-
 
 class MaterialReceiptManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
@@ -197,5 +161,38 @@ class MaterialReceiptManagementViewSet(CreateUpdateDeleteModelViewSet):
         
         return super().destroy(request, *args, **kwargs)
 
+############### 
+############### 
+
+class ReceiptSubcontScheduleListViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for get all arrival schedule of product subconstruction
+    '''
+    permission_classes = [PpicPermission]
+    serializer_class = ThreeDepthReceiptSubcontScheduleSerializer
+    queryset = ReceiptSubcontSchedule.objects.select_related('product_subcont','product_subcont__deliver_note_subcont','product_subcont__process','product_subcont__product','product_subcont__deliver_note_subcont__supplier','product_subcont__deliver_note_subcont__driver','product_subcont__deliver_note_subcont__vehicle','product_subcont__product__customer','product_subcont__product__type','product_subcont__process__process_type','product_subcont__process__product').annotate(received=Sum('product_subcont__subcontreceipt__quantity')).filter(Q(fulfilled_quantity=0),Q(received__lt=F('product_subcont__quantity')) |Q(received=None) )
+
+class MaterialReceiptScheduleReadOnlyViewSet(ReadOnlyModelViewSet):
+    '''
+    a read only view set for schedule material receipt
+    '''
+    permission_classes = [PpicPermission]
+    serializer_class = ThreeDepthMaterialReceiptScheduleSerializer
+    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier').filter(Q(fulfilled_quantity__lte=0)&Q(material_order__arrived__lt=F('material_order__ordered'))).order_by('date')
+
+class ProductDeliverSubcontListViewSet(ReadOnlyModelViewSet):
+    '''
+    a view set to get all list of product that in subconstruction
+    '''
+    permission_classes = [PpicPermission]
+    serializer_class = OneDepthProductDeliverSubcontSerializer
+    queryset = ProductDeliverSubcont.objects.prefetch_related('subcontreceipt_set').select_related('deliver_note_subcont','process','product').annotate(received=Sum('subcontreceipt__quantity')).filter(Q(received__lt=F('quantity'))|Q(received=None))
+
+class MaterialOrderReadOnlyViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for get material order list
+    '''
+    serializer_class = TwoDepthMaterialOrderSerializer
+    queryset = MaterialOrder.objects.select_related('material','material__uom','material__supplier','purchase_order_material','purchase_order_material__supplier').filter(arrived__lt=F('ordered'))
 
 

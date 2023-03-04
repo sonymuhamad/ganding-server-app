@@ -7,19 +7,17 @@ from datetime import date
 from dateutil import rrule
 
 from marketing.permissions import MarketingPermission
-from marketing.serializer import SalesOrderReadOnlyFromInvoiceSerializer,ReportProductOrderSerializer
 from marketing.models import SalesOrder
 
-from ppic.serializer import ProductOrderListSerializer
 from ppic.models import ProductOrder
-
+from marketing.serializers.sales_order_serializer import TwoDepthProductOrderSerializer,OneDepthSalesOrderNestedProductOrderSerializer,ReportProductOrderSerializer
 
 class FinishedSalesOrderViewSet(GetModelViewSet):
     '''
     a viewset provide endpoint to get sales order that already finished, but not closed yet.
     '''
     permission_classes = [MarketingPermission]
-    serializer_class = SalesOrderReadOnlyFromInvoiceSerializer
+    serializer_class = OneDepthSalesOrderNestedProductOrderSerializer
     queryset = SalesOrder.objects.select_related('customer').prefetch_related(
         Prefetch('productoder_set',ProductOrder.objects.select_related('product','product__customer','product__type'))).filter(Q(closed=False),productorder__delivered__gte=F('productorder__ordered'))
 
@@ -94,7 +92,7 @@ class InProgressProductOderViewSet(GetModelViewSet):
     '''
     a viewset provide endpoint to get in progress order
     '''
-    serializer_class = ProductOrderListSerializer
+    serializer_class = TwoDepthProductOrderSerializer
     permission_classes = [MarketingPermission]
     queryset = ProductOrder.objects.select_related('product','sales_order','product__customer','product__type','sales_order__customer').filter(Q(delivered__lt=F('ordered')),Q(sales_order__fixed=True)&Q(sales_order__closed=False)).order_by('pk')
 

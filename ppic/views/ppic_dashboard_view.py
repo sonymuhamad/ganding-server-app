@@ -7,19 +7,20 @@ from dateutil import rrule
 
 from ppic.permissions import PpicPermission
 
-from ppic.serializer import ProductListSerializer,MaterialListSerializer,MonthlyProductionReportSerializer
 from ppic.models import Product,ProductOrder,Material,ProductionReport,RequirementMaterial
 
+from ppic.serializers.product_serializer import OneDepthProductNestedOrderSerializer
+from ppic.serializers.material_serializer import MaterialDetailSerializer
+from ppic.serializers.production_serializer import MonthlyProductionReportSerializer
 
 class ProductOrderedViewSet(GetModelViewSet):
     '''
     a viewset for request list of product there is still have an upcoming product delivery
     '''
     permission_classes = [PpicPermission]
-    serializer_class = ProductListSerializer
-    permission_classes=[PpicPermission]
-    queryset = Product.objects.select_related('customer','type').prefetch_related(Prefetch(
-        'ppic_productorder_related',queryset=ProductOrder.objects.select_related('sales_order','product'))).filter(Q(ppic_productorders__sales_order__fixed=True)&Q(ppic_productorders__ordered__gt=F('ppic_productorders__delivered'))&Q(ppic_productorders__sales_order__closed=False)).annotate(rest_order=Sum(
+    serializer_class = OneDepthProductNestedOrderSerializer
+    queryset = Product.objects.get_queryset_related().prefetch_related(
+        Prefetch('ppic_productorder_related',queryset=ProductOrder.objects.select_related('sales_order','product'))).filter(Q(ppic_productorders__sales_order__fixed=True)&Q(ppic_productorders__ordered__gt=F('ppic_productorders__delivered'))&Q(ppic_productorders__sales_order__closed=False)).annotate(rest_order=Sum(
             'ppic_productorders__ordered')-Sum('ppic_productorders__delivered')).filter(Q(rest_order__isnull=False))
 
 class MaterialOrderedViewSet(GetModelViewSet):
@@ -27,10 +28,9 @@ class MaterialOrderedViewSet(GetModelViewSet):
     a viewset for request list of material there is still have an upcoming material receipt
     '''
     permission_classes = [PpicPermission]
-    serializer_class = MaterialListSerializer
-    queryset = Material.objects.prefetch_related(
-        Prefetch(
-            'ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product'))).select_related('warehousematerial','uom','supplier').filter(ppic_materialorders__ordered__gt=F('ppic_materialorders__arrived'),ppic_materialorders__purchase_order_material__done=False).annotate(rest_arrival=Sum(
+    serializer_class = MaterialDetailSerializer
+    queryset = Material.objects.get_queryset_related().prefetch_related(
+        Prefetch('ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product'))).filter(ppic_materialorders__ordered__gt=F('ppic_materialorders__arrived'),ppic_materialorders__purchase_order_material__done=False).annotate(rest_arrival=Sum(
             'ppic_materialorders__ordered')-Sum('ppic_materialorders__arrived')).filter(Q(
                             rest_arrival__isnull=False))
 

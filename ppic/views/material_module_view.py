@@ -10,10 +10,9 @@ from ppic.permissions import PpicPermission,CanManageMaterial
 
 from ppic.models import UnitOfMaterial,Material,MaterialRequirementPlanning,DetailMrp,RequirementMaterial,Product,ProductOrder,WarehouseProduct,Process,RequirementProduct,MaterialOrder
 
-from ppic.serializer import UomManagementSerializer,MrpReadOnlySerializer,MaterialListSerializer,UomListSerializer,MrpManagementSerializer,MaterialSerializer,SupplierListSerializer
-
 from marketing.models import SalesOrder
-from purchasing.models import Supplier
+
+from ppic.serializers.material_serializer import UnitOfMaterialSerializer,OneDepthMaterialNestedWarehouseSerializer,MaterialDetailSerializer,MaterialManagementSerializer,TwoDepthMrpSerializer,MrpManagementSerializer
 
 
 class UomManagementViewSet(CreateUpdateDeleteModelViewSet):
@@ -21,14 +20,14 @@ class UomManagementViewSet(CreateUpdateDeleteModelViewSet):
     management for unit of material
     '''
     permission_classes = [PpicPermission,CanManageMaterial]
-    serializer_class = UomManagementSerializer
+    serializer_class = UnitOfMaterialSerializer
     queryset = UnitOfMaterial.objects.prefetch_related(Prefetch('material_set',queryset=Material.objects.select_related('supplier','warehousematerial')))
 
     def destroy(self, request, *args, **kwargs):
         pk = int(kwargs['pk'])
         uom = get_object_or_404(self.queryset,pk=pk)
 
-        if pk == 1 or pk == 2 or pk ==4:
+        if pk == 1 or pk == 2 or pk ==3:
             invalid('Tidak bisa menghapus unit material utama dalam sistem') 
 
         if uom.material_set.exists():
@@ -36,29 +35,35 @@ class UomManagementViewSet(CreateUpdateDeleteModelViewSet):
 
         return super().destroy(request, *args, **kwargs)
 
-
 class UomListViewSet(ReadOnlyModelViewSet):
+    '''
+    viewset provide list data of unit of material 
+    '''
     permission_classes = [PpicPermission]
-    serializer_class = UomListSerializer
-    queryset = UnitOfMaterial.objects.annotate(materials=Count('material'))
-
+    serializer_class = UnitOfMaterialSerializer
+    queryset = UnitOfMaterial.objects.annotate(amount_of_material=Count('material'))
 
 class MaterialListViewSet(ReadOnlyModelViewSet):
     '''
-    a viewset for handling request for list of material
+    a viewset for handle request for list data of material
     '''
-    permission_classes = [PpicPermission]
-    serializer_class = MaterialListSerializer
-    queryset = Material.objects.prefetch_related(
-        Prefetch('ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product'))).select_related('warehousematerial','uom','supplier')
+    serializer_class = OneDepthMaterialNestedWarehouseSerializer
+    queryset = Material.objects.get_queryset_related()
 
+class MaterialDetailViewSet(ReadOnlyModelViewSet):
+    '''
+    viewset for handle request for detail material
+        nested to its requirement mateiral and warehouse material
+    '''
+    serializer_class = MaterialDetailSerializer
+    queryset = Material.objects.get_queryset_related().prefetch_related(
+        Prefetch('ppic_requirementmaterial_related',queryset=RequirementMaterial.objects.select_related('process','process__process_type','process__product','material','material__supplier','material__uom')))
 
 class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     get mrp
     '''
-    permission_classes = [PpicPermission]
-    serializer_class = MrpReadOnlySerializer
+    serializer_class = TwoDepthMrpSerializer
     queryset = MaterialRequirementPlanning.objects.prefetch_related(
         Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product'))).select_related('material','material__supplier','material__uom')
 
@@ -266,8 +271,8 @@ class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
         
         ## requirements material in table are merged with requirements material which calculated with all product ordered
 
-        mrp_seriz = MrpReadOnlySerializer(recommend_seriz,many=True)
-
+        mrp_seriz = self.get_serializer(recommend_seriz,many=True)
+        
         return  Response(mrp_seriz.data)
 
     def searchNestedProduction(self,data,idProduct,quantity,dataProducts):
@@ -343,7 +348,7 @@ class MaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
     a view set for cud data material
     '''
     permission_classes = [PpicPermission,CanManageMaterial]
-    serializer_class = MaterialSerializer
+    serializer_class = MaterialManagementSerializer
     queryset = Material.objects.prefetch_related('ppic_requirementmaterial_related').select_related('warehousematerial')
 
     def destroy(self, request, *args, **kwargs):
@@ -368,9 +373,4 @@ class MaterialManagementViewSet(CreateUpdateDeleteModelViewSet):
             instance.image.delete(save=True)
         
         return super().update(request, *args, **kwargs)
-
-
-class SupplierListViewSet(ReadOnlyModelViewSet):
-    permission_classes = [PpicPermission]
-    serializer_class = SupplierListSerializer
-    queryset = Supplier.objects.all()
+    

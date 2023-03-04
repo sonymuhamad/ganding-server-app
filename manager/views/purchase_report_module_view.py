@@ -7,20 +7,9 @@ from dateutil import rrule
 from manager.permissions import ManagerPermission
 from manager.serializer import ReportOrderEachMonthReadOnlySerializer,ReportSupplierOrderReadOnlySerializer
 
-from ppic.serializer import MaterialOrderReadOnlySerializer,MaterialReceiptReadOnlySerializer
-from ppic.models import MaterialOrder,MaterialReceipt,Material
+from ppic.models import MaterialOrder,Material
 
 from purchasing.models import Supplier
-
-
-
-class MaterialOrderListReadOnlyViewSet(GetModelViewSet):
-    '''
-    a viewset class for get all upcoming materials
-    '''
-    serializer_class = MaterialOrderReadOnlySerializer
-    permission_classes = [ManagerPermission]
-    queryset = MaterialOrder.objects.filter(Q(arrived__lt=F('ordered')))
 
 
 class ReportMaterialOrderReadOnlyViewSet(GetModelViewSet):
@@ -77,14 +66,6 @@ class ReportMaterialOrderReadOnlyViewSet(GetModelViewSet):
 
         serializer = self.get_serializer(self.final_data,many=True)
         return Response(serializer.data)
-
-class MaterialReceiptListReadOnlyViewSet(GetModelViewSet):
-    '''
-    a viewset for get a list of material received    
-    '''
-    serializer_class = MaterialReceiptReadOnlySerializer
-    permission_classes = [ManagerPermission]
-    queryset = MaterialReceipt.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier','delivery_note_material','delivery_note_material__supplier')
 
 class ReportSupplierOrderReadOnlyViewSet(GetModelViewSet):
     '''

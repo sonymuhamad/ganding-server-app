@@ -10,28 +10,21 @@ from ppic.utils import MultipartJsonParser
 from ppic.permissions import CanManageProduct,PpicPermission
 
 from ppic.models import Product,ProductOrder,Process,WarehouseProduct,RequirementMaterial,RequirementProduct,ProcessType,ProductType,WarehouseType
-from ppic.serializer import ProductReadOnlySerializer,ProductTypeSerializer,ProcessTypeSerializer,ProductListSerializer,CustomerListSerializer,ProductManagementSerializer,ProductDetailSerializer,ProcessPartialManagementSerializer
 
-from marketing.models import Customer
+from ppic.serializers.product_serializer import OneDepthProductNestedProcessAndOrderSerializer,OneDepthProductSerializer,ProductTypeSerializer,ProcessTypeSerializer,ProcessManagementSerializer,ProductManagementSerializer
 
+from rest_framework.permissions import AllowAny
 
-
-class ProductListReadOnlyViewSet(ReadOnlyModelViewSet):
-    permission_classes = [PpicPermission]
-    serializer_class = ProductReadOnlySerializer
-    queryset = Product.objects.prefetch_related(
-            Prefetch('ppic_process_related',queryset=Process.objects.
-            prefetch_related(
-                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','process','product'))).
-            prefetch_related(
-                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
-            prefetch_related(
-                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type'))).select_related('type')
-
+class ProductListViewSet(ReadOnlyModelViewSet):
+    '''
+    a viewset for handle request of data products
+    '''
+    serializer_class = OneDepthProductSerializer
+    queryset = Product.objects.get_queryset_related()
 
 class ProductTypeViewSet(ReadOnlyModelViewSet):
     '''
-    a viewset for handling all request for product type things
+    a viewset for handling request of data product type
     '''
     permission_classes = [PpicPermission]
     serializer_class = ProductTypeSerializer
@@ -60,8 +53,6 @@ class ProductTypeManagementViewSet(CreateUpdateDeleteModelViewSet):
 
         return super().destroy(request, *args, **kwargs)    
 
-
-
 class ProcessTypeViewSet(ReadOnlyModelViewSet):
     '''
     a viewset for get and retrieve process type
@@ -77,7 +68,6 @@ class ProcessTypeManagementViewSet(CreateUpdateDeleteModelViewSet):
     permission_classes = [PpicPermission,CanManageProduct]
     serializer_class = ProcessTypeSerializer
     queryset = ProcessType.objects.all()
-
     
     def destroy(self, request, *args, **kwargs):
         pk = kwargs['pk']
@@ -91,33 +81,85 @@ class ProcessTypeManagementViewSet(CreateUpdateDeleteModelViewSet):
 
         return super().destroy(request, *args, **kwargs)
 
-
-class CustomerListViewSet(ReadOnlyModelViewSet):
+class ProductDetailReadOnlyViewSet(ReadOnlyModelViewSet):
     permission_classes = [PpicPermission]
-    serializer_class = CustomerListSerializer
-    queryset = Customer.objects.all()
+    serializer_class = OneDepthProductNestedProcessAndOrderSerializer
+    queryset_warehouseproduct = WarehouseProduct.objects.select_related('warehouse_type','process','product')
+    queryset_product_order = ProductOrder.objects.select_related('sales_order','product').filter(delivered__lt=F('ordered'))
 
+    queryset_requirement_product = RequirementProduct.objects.select_related('product','process','product__customer','product__type').prefetch_related(
+        Prefetch('product__ppic_warehouseproduct_related',queryset_warehouseproduct))
+    queryset_requirement_material = RequirementMaterial.objects.select_related('material','material__warehousematerial','material__supplier','material__uom','material__warehousematerial__material','process')
 
-class ProductListViewSet(ReadOnlyModelViewSet):
+    queryset = Product.objects.get_queryset_related().prefetch_related(
+            Prefetch('ppic_process_related',queryset=Process.objects.
+            prefetch_related(
+                Prefetch('warehouseproduct_set',queryset = queryset_warehouseproduct)).
+            prefetch_related(
+                Prefetch('requirementproduct_set',queryset = queryset_requirement_product )).
+            prefetch_related(
+                Prefetch('requirementmaterial_set',queryset = queryset_requirement_material)).select_related('process_type','product'))).prefetch_related(
+                    Prefetch('ppic_productorder_related',queryset = queryset_product_order)).annotate(productordered=Sum('ppic_productorders__ordered')).annotate(productdelivered=Sum('ppic_productorders__delivered'))
+
+class ProcessManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
-    a viewset for handling request for list of products
+    a viewset that handle management create update delete for process, nested to requirement material, requirement product, warehouse product
     '''
-    permission_classes = [PpicPermission]
-    serializer_class = ProductListSerializer
-    queryset = Product.objects.select_related('customer','type')
+    permission_classes = [PpicPermission,CanManageProduct]
+    serializer_class = ProcessManagementSerializer
+    queryset = Process.objects.prefetch_related(
+        Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','process'))).prefetch_related(
+        Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product','process'))).prefetch_related(
+        Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','product','process'))).select_related('product','process_type')
+
+    def change_previous_process(self,previous_process:Process):
+        '''
+        change previous process of deleted process to finished goods
+        '''
+        wh_type_fg = WarehouseType.objects.get(pk=1)
+        wh_product_prev_process = previous_process.warehouseproduct_set.exclude(warehouse_type=2).get()
+        wh_product_prev_process.warehouse_type = wh_type_fg
+        wh_product_prev_process.save()
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_process = get_object_or_404(self.queryset,pk=pk)
+        
+        for wh_products in instance_process.warehouseproduct_set.all():
+            if wh_products.quantity > 0:
+                invalid()
+
+        whProduct = instance_process.warehouseproduct_set.exclude(warehouse_type=2).get()
+        product = instance_process.product
+        len_queryset_process = product.ppic_process_related.count()
+
+        if whProduct.warehouse_type.id == 1 and len_queryset_process > 1 :
+            ## change the previous of the last process to finished good, before delete selected process
+
+            order = instance_process.order
+
+            try:
+                one_previous_process = product.ppic_process_related.get(order = (order - 1))
+                self.change_previous_process(one_previous_process)
+
+            except:
+                two_previous_process = product.ppic_process_related.get(order = (order - 2))
+                self.change_previous_process(two_previous_process)
+        
+        return super().destroy(request, *args, **kwargs)
 
 class ProductManagementViewSet(CreateUpdateDeleteModelViewSet):
     permission_classes = [PpicPermission,CanManageProduct]
     serializer_class = ProductManagementSerializer
     parser_classes = [MultipartJsonParser]
-    queryset = Product.objects.prefetch_related(
+    queryset = Product.objects.get_queryset_related().prefetch_related(
             Prefetch('ppic_process_related',queryset=Process.objects.
             prefetch_related(
                 Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','product','process'))).
             prefetch_related(
                 Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
             prefetch_related(
-                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type'))).select_related('type')
+                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material'))).select_related('process_type')))
 
     def fields_check(self,data):
         
@@ -171,15 +213,12 @@ class ProductManagementViewSet(CreateUpdateDeleteModelViewSet):
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
 
-
-
         if getattr(instance, '_prefetched_objects_cache', None):
             # If 'prefetch_related' has been applied to a queryset, we need to
             # forcibly invalidate the prefetch cache on the instance.
             instance._prefetched_objects_cache = {}
 
         return Response(serializer.data)
-        
 
     def create(self, request, *args, **kwargs):
         
@@ -190,56 +229,5 @@ class ProductManagementViewSet(CreateUpdateDeleteModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-class ProductDetailReadOnlyViewSet(ReadOnlyModelViewSet):
-    permission_classes = [PpicPermission]
-    serializer_class = ProductDetailSerializer
-    queryset = Product.objects.prefetch_related(
-            Prefetch('ppic_process_related',queryset=Process.objects.
-            prefetch_related(
-                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','process','product'))).
-            prefetch_related(
-                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).
-            prefetch_related(
-                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','material__warehousematerial','material__supplier','material__uom'))).select_related('process_type'))).prefetch_related(
-                    Prefetch('ppic_productorder_related',queryset=ProductOrder.objects.select_related('sales_order').filter(delivered__lt=F('ordered')))).select_related('type').annotate(productordered=Sum('ppic_productorders__ordered')).annotate(productdelivered=Sum('ppic_productorders__delivered'))
-
-class ProcessManagementViewSet(CreateUpdateDeleteModelViewSet):
-    '''
-    a viewset that handle management create update delete for process, nested to requirement material, requirement product, warehouse product
-    '''
-    permission_classes = [PpicPermission,CanManageProduct]
-    serializer_class = ProcessPartialManagementSerializer
-    queryset = Process.objects.prefetch_related(Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','process'))).prefetch_related(Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product','process'))).prefetch_related(Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','product','process'))).select_related('product','process_type')
-
-
-    def destroy(self, request, *args, **kwargs):
-        pk = kwargs['pk']
-        instance_process = get_object_or_404(self.queryset,pk=pk)
-        
-        for wh_products in instance_process.warehouseproduct_set.all():
-            if wh_products.quantity > 0:
-                invalid()
-        
-        whProduct = instance_process.warehouseproduct_set.exclude(warehouse_type=2).get()
-        product = instance_process.product
-        len_queryset_process = product.ppic_process_related.count()
-
-        if whProduct.warehouse_type.id == 1 and len_queryset_process > 1 :
-            ## change the previous of the last process to finished good, before delete selected process
-
-            order = instance_process.order
-            wh_type_fg = WarehouseType.objects.get(pk=1)
-
-            try:
-                prev_process = product.ppic_process_related.get(order = (order - 1))
-                wh_product_prev_process = prev_process.warehouseproduct_set.exclude(warehouse_type=2).get()
-                wh_product_prev_process.warehouse_type = wh_type_fg
-                wh_product_prev_process.save()
-
-            except:
-                prev_process = product.ppic_process_related.get(order = (order - 2))
-                wh_product_prev_process = prev_process.warehouseproduct_set.exclude(warehouse_type=2).get()
-                wh_product_prev_process.warehouse_type = wh_type_fg
-                wh_product_prev_process.save()
-        
-        return super().destroy(request, *args, **kwargs)
+###########################################
+###########################################

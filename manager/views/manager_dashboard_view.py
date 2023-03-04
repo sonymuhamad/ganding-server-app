@@ -8,15 +8,17 @@ from manager.shortcuts import date_last_week
 from manager.serializer import PercentageSerializer
 
 from ppic.models import DeliveryNoteCustomer,ProductDeliverCustomer,DeliveryNoteMaterial,MaterialReceipt,ProductionReport,MaterialProductionReport,ProductProductionReport,SubcontReceipt
-from ppic.serializer import DeliveryNoteCustomerReadOnlySerializer,ProductionReportReadOnlySerializer,DeliveryNoteMaterialReadOnlySerializer
 
+from ppic.serializers.delivery_serializer import OneDepthDeliveryNoteCustomerSerializer
+from ppic.serializers.production_serializer import ProductionReportReadOnlySerializer
+from ppic.serializers.warehouse_serializer import DeliveryNoteMaterialReadOnlySerializer
 
 class DeliveryNoteCustomerReadOnlyViewSet(GetModelViewSet):
     '''
     a viewset class for get this week delivery note
     '''
     permission_classes = [ManagerPermission]
-    serializer_class = DeliveryNoteCustomerReadOnlySerializer
+    serializer_class = OneDepthDeliveryNoteCustomerSerializer
     queryset = DeliveryNoteCustomer.objects.filter(date__range=(date_last_week,date.today())).prefetch_related(
             Prefetch('productdelivercustomer_set',queryset=ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order','schedules','delivery_note_customer','delivery_note_customer__customer','delivery_note_customer__vehicle','delivery_note_customer__driver','schedules__product_order'))).select_related('customer','vehicle','driver')
 

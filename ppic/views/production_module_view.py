@@ -8,13 +8,14 @@ from manager.shortcuts import invalid
 
 from ppic.permissions import PpicPermission,CanManageProduction
 
-from ppic.serializer import MachineSerializer,OperatorSerializer,ProductionReportReadOnlySerializer,ProductionReportManagementSerializer,ProductReadOnlySerializer,ProductDeliverSubcontReadOnlySerializer,ReceiptSubcontScheduleManagementSerializer,ProductSerializer
-
 from ppic.models import Machine,Operator,Product,Process,RequirementMaterial,RequirementProduct,WarehouseProduct,RequirementMaterialSubcont,RequirementProductsubcont,ProductionReport,MaterialProductionReport,ProductProductionReport,ProductOrder,ProcessType,ReceiptSubcontSchedule,ProductDeliverSubcont
 
-
+from ppic.serializers.product_serializer import OneDepthProductNestedProcessSerializer
 from marketing.models import SalesOrder
 
+from ppic.serializers.production_serializer import MachineSerializer,OperatorSerializer,ProductionReportManagementSerializer,ProductionReportReadOnlySerializer,ReceiptSubcontScheduleManagementSerializer
+
+from ppic.serializers.delivery_serializer import ProductDeliverSubcontReadOnlySerializer
 
 class MachineManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
@@ -67,8 +68,10 @@ class OperatorViewSet(ReadOnlyModelViewSet):
 
 
 class ProductionPriorityViewSet(ReadOnlyModelViewSet):
+    '''
+    '''
     permission_classes = [PpicPermission]
-    serializer_class = ProductSerializer
+    serializer_class = OneDepthProductNestedProcessSerializer
     queryset = Product.objects.all()
 
     def list(self, request, *args, **kwargs):
@@ -77,19 +80,27 @@ class ProductionPriorityViewSet(ReadOnlyModelViewSet):
             Prefetch('productorder_set',queryset=ProductOrder.objects.filter(delivered__lt=F('ordered')).select_related('product').prefetch_related('product__ppic_process_related')))
 
         process_type_subcont = ProcessType.objects.get(pk=2)
-        
-        productList = Product.objects.prefetch_related(
-            Prefetch('ppic_process_related',queryset=Process.objects.select_related('product','process_type').prefetch_related(
-                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product','product__customer','product__type','process').prefetch_related(Prefetch('product__ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type','product','process'))))).prefetch_related(
-                    Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','product','process'))).prefetch_related(
-                        Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','material__supplier','material__uom','material__warehousematerial','process'))).exclude(process_type=process_type_subcont).order_by('-order'))).select_related('type','customer')
+
+        queryset_warehouseproduct = WarehouseProduct.objects.select_related('warehouse_type','process','product')
+        queryset_requirement_product = RequirementProduct.objects.select_related('product','process','product__customer','product__type').prefetch_related(
+        Prefetch('product__ppic_warehouseproduct_related',queryset_warehouseproduct))
+        queryset_requirement_material = RequirementMaterial.objects.select_related('material','material__warehousematerial','material__supplier','material__uom','material__warehousematerial__material','process')
+
+        queryset_product = Product.objects.get_queryset_related().prefetch_related(
+            Prefetch('ppic_process_related',queryset=Process.objects.
+            prefetch_related(
+                Prefetch('warehouseproduct_set',queryset = queryset_warehouseproduct)).
+            prefetch_related(
+                Prefetch('requirementproduct_set',queryset = queryset_requirement_product)).
+            prefetch_related(
+                Prefetch('requirementmaterial_set',queryset = queryset_requirement_material)).exclude(process_type=process_type_subcont).select_related('process_type','product')))
 
         dataProduct = {}
         productOrdered = {}
         productionPriority = []
         storageProduct = {}
 
-        for product in productList:
+        for product in queryset_product:
             ppic_process_related = []
 
             for process in product.ppic_process_related.all():
@@ -169,7 +180,7 @@ class ProductionPriorityViewSet(ReadOnlyModelViewSet):
         for k,v in storageProduct.items():
             self.search(productionPriority,dataProduct,v,k)
 
-        prioritySeriz = ProductSerializer(productionPriority,many=True)
+        prioritySeriz = self.get_serializer(productionPriority,many=True)
         return Response(prioritySeriz.data)
 
     def recursiveSearchRequirementProduct(self,storageProducts,productList,quantity,idProduct):
@@ -237,16 +248,22 @@ class ProductionReportManagementViewSet(CreateUpdateDeleteModelViewSet):
 
 class ProductionListViewSet(ReadOnlyModelViewSet):
     permission_classes = [PpicPermission]
-    serializer_class = ProductReadOnlySerializer
-    queryset = Product.objects.prefetch_related(
+    serializer_class = OneDepthProductNestedProcessSerializer
+    queryset_warehouseproduct = WarehouseProduct.objects.select_related('warehouse_type','process','product')
+    queryset_product_order = ProductOrder.objects.select_related('sales_order','product').filter(delivered__lt=F('ordered'))
+
+    queryset_requirement_product = RequirementProduct.objects.select_related('product','process','product__customer','product__type').prefetch_related(
+        Prefetch('product__ppic_warehouseproduct_related',queryset_warehouseproduct))
+    queryset_requirement_material = RequirementMaterial.objects.select_related('material','material__warehousematerial','material__supplier','material__uom','material__warehousematerial__material','process')
+
+    queryset = Product.objects.get_queryset_related().prefetch_related(
             Prefetch('ppic_process_related',queryset=Process.objects.
             prefetch_related(
-                Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type'))).
+                Prefetch('warehouseproduct_set',queryset = queryset_warehouseproduct)).
             prefetch_related(
-                Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product','product__customer','product__type').prefetch_related(
-                    Prefetch('product__ppic_warehouseproduct_related',queryset=WarehouseProduct.objects.select_related('warehouse_type').filter(warehouse_type=1))))).
+                Prefetch('requirementproduct_set',queryset = queryset_requirement_product )).
             prefetch_related(
-                Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','material__uom','material__supplier','material__warehousematerial'))).select_related('process_type').exclude(process_type=2))).select_related('type','customer')
+                Prefetch('requirementmaterial_set',queryset = queryset_requirement_material)).select_related('process_type','product')))
 
 class ReceiptSubcontScheduleManagementViewSet(CreateUpdateDeleteModelViewSet):
     '''
@@ -265,8 +282,6 @@ class ReceiptSubcontScheduleManagementViewSet(CreateUpdateDeleteModelViewSet):
 
         return super().destroy(request, *args, **kwargs)
 
-
-
 class ProductDeliverSubcontReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     a viewset for get product in subconstruction, nested to requirement material subcont, requirement product subcont, and arrival schedule
@@ -275,4 +290,4 @@ class ProductDeliverSubcontReadOnlyViewSet(ReadOnlyModelViewSet):
     serializer_class = ProductDeliverSubcontReadOnlySerializer
     queryset = ProductDeliverSubcont.objects.select_related('deliver_note_subcont','product','process','deliver_note_subcont__driver','deliver_note_subcont__vehicle','deliver_note_subcont__supplier','product__customer','product__type','process__process_type','process__product').annotate(received=Sum('subcontreceipt__quantity')).prefetch_related(
         Prefetch('requirementmaterialsubcont_set',queryset=RequirementMaterialSubcont.objects.select_related('product_subcont','material','material__uom','material__supplier') )).prefetch_related(
-            Prefetch('requirementproductsubcont_set',queryset=RequirementProductsubcont.objects.select_related('product_subcont','product','product__customer','product__type'))).prefetch_related('receiptsubcontschedule_set').order_by('deliver_note_subcont__date')
+            Prefetch('requirementproductsubcont_set',queryset=RequirementProductsubcont.objects.select_related('product_subcont','product','product__customer','product__type'))).prefetch_related(Prefetch('receiptsubcontschedule_set',queryset=ReceiptSubcontSchedule.objects.select_related('product_subcont'))).order_by('deliver_note_subcont__date')

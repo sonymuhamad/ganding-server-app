@@ -4,11 +4,11 @@ from .auth import AuthViewSet,LogoutViewSet
 
 from manager.views.user_module_view import UserManagementViewSet,UserReadOnlyViewSet,GroupReadOnlyViewSet,UserGroupManagementAddViewSet,UserGroupManagementDeleteViewSet,PermissionListReadOnlyViewSet,UserPermissionAddManagementViewSet,UserPermissionDeleteManagementViewSet
 
-from manager.views.purchase_report_module_view import ReportMaterialOrderReadOnlyViewSet,ReportSupplierOrderReadOnlyViewSet,MaterialOrderListReadOnlyViewSet,MaterialReceiptListReadOnlyViewSet
+from manager.views.purchase_report_module_view import ReportMaterialOrderReadOnlyViewSet,ReportSupplierOrderReadOnlyViewSet
 
 from manager.views.production_report_module_view import ReportProductionReadOnlyViewSet,OperatorReadOnlyViewSet,MachineReadOnlyViewSet
 
-from manager.views.sales_report_module_view import ReportCustomerAndOrderedProductViewSet,ReportProductDeliverCustomerReadOnlyViewSet,ReportProductInProgressReadOnlyViewSet,ReportProductOrderReadOnlyViewSet
+from manager.views.sales_report_module_view import ReportCustomerAndOrderedProductViewSet,ReportProductOrderReadOnlyViewSet
 
 
 from manager.views.manager_dashboard_view import ReportPresentageDeliveryTimeLinessReadOnlyViewSet,ReportPresentageTimeLinessMaterialOrder,DeliveryNoteCustomerReadOnlyViewSet,DeliveryNoteMaterialReadOnlyViewSet,ProductionReportReadOnlyViewSet
@@ -19,7 +19,6 @@ auth_list = AuthViewSet.as_view({
     'post':'auth'
 })
 router.register(r'sign-out',LogoutViewSet,basename='logout')
-
 
 router.register(r'user-management',UserManagementViewSet,basename='user-management')
 router.register(r'user',UserReadOnlyViewSet,basename='user')
@@ -33,14 +32,9 @@ router.register(r'user-remove-permission-management',UserPermissionDeleteManagem
 
 router.register(r'report-sales-order',ReportProductOrderReadOnlyViewSet,basename='report-sales-order')
 router.register(r'report-customer-product-order',ReportCustomerAndOrderedProductViewSet,basename='report-customer-product-order')
-router.register(r'report-product-in-progress',ReportProductInProgressReadOnlyViewSet,basename='report-product-in-progress')
-router.register(r'product-delivery-list',ReportProductDeliverCustomerReadOnlyViewSet,basename='product-delivery-list')
 
 router.register(r'report-purchase-order',ReportMaterialOrderReadOnlyViewSet,basename='report-purchase-order')
-router.register(r'material-order-list',MaterialOrderListReadOnlyViewSet,basename='material-order-list')
-router.register(r'material-receipt-list',MaterialReceiptListReadOnlyViewSet,basename='material-receipt-list')
 router.register(r'report-supplier-material-order',ReportSupplierOrderReadOnlyViewSet,basename='report-supplier-material-order')
-
 
 router.register(r'report-production',ReportProductionReadOnlyViewSet,basename='report-production')
 router.register(r'report-operator',OperatorReadOnlyViewSet,basename='report-operator')

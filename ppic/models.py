@@ -55,9 +55,21 @@ class AbstractStuff(AbstractCreated):
     class Meta:
         abstract = True
 
+class ProductManager(models.Manager):
+    '''
+    manager for product model
+    '''
+    def get_queryset_related(self) -> models.QuerySet:
+        '''
+        method for get related data of product by select_related
+        '''
+        return self.select_related('customer','type')
+
 class Product(AbstractStuff,AbstractCode,AbstractCustomer):
     '''
     '''
+    objects = ProductManager()
+
     type = models.ForeignKey(ProductType,on_delete=models.CASCADE)
     process = models.PositiveSmallIntegerField()
     
@@ -89,11 +101,20 @@ class DeliverySchedule(AbstractSchedule):
     schedule delivery for each product order
     '''
     product_order = models.ForeignKey(ProductOrder,on_delete=models.CASCADE)
-    
+
+class MaterialManager(models.Manager):
+    '''
+    extend manager of material model
+    '''
+
+    def get_queryset_related(self) -> models.QuerySet:
+        return self.select_related('uom','supplier','warehousematerial')
 
 class Material(AbstractStuff,AbstractSupplier):
     '''
     '''
+    objects = MaterialManager()
+
     spec = models.CharField(max_length=150)
     length = models.FloatField(blank=True,null=True)
     width = models.FloatField(blank=True,null=True)
@@ -189,19 +210,34 @@ class AbstractDeliveryNote(AbstractDelivery):
     class Meta:
         abstract = True
 
+class DeliveryNoteSubcontManager(models.Manager):
+    '''
+    '''
+    def get_queryset_related(self) -> models.QuerySet:
+        return self.select_related('supplier','vehicle','driver')
 
 class DeliveryNoteSubcont(AbstractDeliveryNote,AbstractSupplier):
     '''
     model to save all delivery note subcont to supplier,
     '''
+    objects = DeliveryNoteSubcontManager()
+
     class Meta(AbstractDeliveryNote.Meta,AbstractSupplier.Meta):
         pass
 
+class DeliveryNoteCustomerManager(models.Manager):
+    '''
+    '''
+    def get_queryset_related(self) -> models.QuerySet:
+        return self.select_related('customer','vehicle','driver')
 
 class DeliveryNoteCustomer(AbstractDeliveryNote,AbstractCustomer):
     '''
     model to save delivery note product to supplier
     '''
+
+    objects = DeliveryNoteCustomerManager()
+
     class Meta(AbstractCustomer.Meta,AbstractDeliveryNote.Meta):
         pass
 

@@ -1,22 +1,22 @@
 from rest_framework.viewsets import CreateUpdateDeleteModelViewSet,RetrieveModelViewSet,ReadOnlyModelViewSet,UpdateModelViewSet
 from rest_framework.response import Response
 
-from django.db.models import Prefetch,F,Count
+from django.db.models import Prefetch,Count,F
 from math import ceil
 
 from purchasing.permissions import PurchasingPermission,CanManagePurchaseOrderMaterial
-from purchasing.serializer import PurchaseOrderManagementSerializer,MaterialOrderManagementSerializer,MaterialReceiptScheduleManagementSerializer,PurchaseOrderReadOnlySerializer,MaterialReceiptListSerializer,CloseStatusPurchaseOrderSerializer,StatusPurchaseOrderManagementSerializer,MaterialListSerializer,MaterialReceiptScheduleReadOnlySerializer
-
 from purchasing.models import PurchaseOrderMaterial
 from django.shortcuts import get_object_or_404
 from manager.shortcuts import invalid
 from purchasing.shortcuts import validate_mo
 
-
-from ppic.serializer import MrpReadOnlySerializer
-from ppic.models import MaterialReceipt,MaterialReceiptSchedule,MaterialOrder,Material,Product,RequirementMaterial,RequirementMaterialSubcont,RequirementProduct,DetailMrp,Process,WarehouseProduct,ProductOrder,MaterialRequirementPlanning
-
+from ppic.models import Material,MaterialRequirementPlanning,DetailMrp,RequirementMaterial,Product,ProductOrder,WarehouseProduct,Process,RequirementProduct,MaterialOrder,MaterialReceiptSchedule,MaterialReceipt
 from marketing.models import SalesOrder
+
+from purchasing.serializers.purchase_order_serializer import PurchaseOrderManagementSerializer,PurchaseOrderReadOnlySerializer,MaterialReceiptScheduleReadOnlySerializer,CloseStatusPurchaseOrderSerializer,StatusPurchaseOrderManagementSerializer,MaterialOrderManagementSerializer,MaterialReceiptScheduleManagementSerializer
+
+from ppic.serializers.warehouse_serializer import MaterialReceiptReadOnlySerializer
+from ppic.serializers.material_serializer import OneDepthMaterialNestedWarehouseSerializer,TwoDepthMrpSerializer
 
 
 class PurchaseOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
@@ -47,13 +47,11 @@ class PurchaseOrderReadOnlyViewSet(ReadOnlyModelViewSet):
     queryset = PurchaseOrderMaterial.objects.prefetch_related(
             Prefetch('materialorder_set',queryset=MaterialOrder.objects.select_related('material','purchase_order_material','material__supplier','material__uom','purchase_order_material__supplier','to_product','to_product__type','to_product__customer').annotate(total_receipt_schedule=Count('materialreceiptschedule',distinct=True)).prefetch_related(Prefetch('materialreceiptschedule_set',MaterialReceiptSchedule.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__uom','material_order__material__supplier','material_order__purchase_order_material__supplier').order_by('date'))) )).select_related('supplier')
 
-
 class MaterialReceiptListViewSet(ReadOnlyModelViewSet):
     '''
     a viewset for retrieve queryset of material receipt, based on particular purchase order
     '''
-    permission_classes = [PurchasingPermission]
-    serializer_class = MaterialReceiptListSerializer
+    serializer_class = MaterialReceiptReadOnlySerializer
     queryset = MaterialReceipt.objects.select_related('delivery_note_material','material_order','delivery_note_material__supplier','material_order__material','material_order__purchase_order_material','material_order__purchase_order_material__supplier','material_order__material__uom','material_order__material__supplier','schedules','schedules__material_order','schedules__material_order__material','schedules__material_order__purchase_order_material').order_by('delivery_note_material__date')
 
     def retrieve(self, request, *args, **kwargs):
@@ -91,8 +89,8 @@ class MaterialListViewSet(RetrieveModelViewSet):
     a viewset for retrieve queryset of material, based on particular supplier
     '''
     permission_classes = [PurchasingPermission]
-    serializer_class = MaterialListSerializer
-    queryset = Material.objects.select_related('supplier','uom').prefetch_related(Prefetch('ppic_requirementmaterial_related',RequirementMaterial.objects.select_related('process','process__process_type','process__product')),Prefetch('ppic_requirementmaterialsubcont_related',queryset=RequirementMaterialSubcont.objects.select_related('product_subcont','product_subcont__deliver_note_subcont','product_subcont__product','product_subcont__process')))
+    serializer_class = OneDepthMaterialNestedWarehouseSerializer
+    queryset = Material.objects.get_queryset_related()
 
     def retrieve(self, request, *args, **kwargs):
         pk = kwargs['pk']
@@ -101,15 +99,66 @@ class MaterialListViewSet(RetrieveModelViewSet):
         validate_queryset = queryset.filter(supplier__id__exact=pk)
         serializer = self.get_serializer(validate_queryset, many=True)
 
+        return Response(serializer.data)                    
+
+class MaterialOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a viewset for cud material order
+    '''
+    permission_classes = [PurchasingPermission,CanManagePurchaseOrderMaterial]
+    serializer_class = MaterialOrderManagementSerializer
+    queryset = MaterialOrder.objects.select_related('purchase_order_material','material')
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance_mos = self.queryset
+        instance_mo = get_object_or_404(instance_mos,pk=pk)
+
+        if instance_mo.arrived > 0:
+             invalid()
+             
+        return super().destroy(request, *args, **kwargs)
+
+
+class MaterialReceiptScheduleManagementViewSet(CreateUpdateDeleteModelViewSet):
+    '''
+    a viewset for management material receipt schedule
+    '''
+    permission_classes = [PurchasingPermission,CanManagePurchaseOrderMaterial]
+    serializer_class = MaterialReceiptScheduleManagementSerializer
+    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__purchase_order_material','material_order__material','material_order__purchase_order_material__supplier','material_order__material__supplier','material_order__material__uom')
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        instance = get_object_or_404(self.queryset,pk=pk)
+
+        if instance.fulfilled_quantity > 0:
+            invalid()
+
+        return super().destroy(request, *args, **kwargs)
+
+class MaterialReceiptScheduleReadOnlyViewSet(RetrieveModelViewSet):
+    '''
+    a viewset for get all schedule based on its purchase order material, for detail po page
+    '''
+    permission_classes = [PurchasingPermission]
+    serializer_class = MaterialReceiptScheduleReadOnlySerializer
+    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__purchase_order_material','material_order__material','material_order__purchase_order_material__supplier','material_order__material__supplier','material_order__material__uom')
+
+    def retrieve(self, request, *args, **kwargs):
+        pk = kwargs['pk']
+        queryset = self.filter_queryset(self.get_queryset())
+        validate_queryset = queryset.filter(material_order__purchase_order_material__id__exact=pk)
+        serializer = self.get_serializer(validate_queryset, many=True)
+
         return Response(serializer.data)
 
-
-class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
+class MrpReadOnlyViewSet(RetrieveModelViewSet):
     '''
     get mrp
     '''
     permission_classes = [PurchasingPermission]
-    serializer_class = MrpReadOnlySerializer
+    serializer_class = TwoDepthMrpSerializer
     queryset = MaterialRequirementPlanning.objects.prefetch_related(
         Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product'))).select_related('material','material__supplier','material__uom')
 
@@ -422,58 +471,4 @@ class MrpReadOnlyViewSet(ReadOnlyModelViewSet):
                             'quantity':qty_req_material
                             } }
                     
-
-class MaterialOrderManagementViewSet(CreateUpdateDeleteModelViewSet):
-    '''
-    a viewset for cud material order
-    '''
-    permission_classes = [PurchasingPermission,CanManagePurchaseOrderMaterial]
-    serializer_class = MaterialOrderManagementSerializer
-    queryset = MaterialOrder.objects.select_related('purchase_order_material','material')
-
-    def destroy(self, request, *args, **kwargs):
-        pk = kwargs['pk']
-        instance_mos = self.queryset
-        instance_mo = get_object_or_404(instance_mos,pk=pk)
-
-        if instance_mo.arrived > 0:
-             invalid()
-             
-        return super().destroy(request, *args, **kwargs)
-
-
-class MaterialReceiptScheduleManagementViewSet(CreateUpdateDeleteModelViewSet):
-    '''
-    a viewset for management material receipt schedule
-    '''
-    permission_classes = [PurchasingPermission,CanManagePurchaseOrderMaterial]
-    serializer_class = MaterialReceiptScheduleManagementSerializer
-    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__purchase_order_material','material_order__material','material_order__purchase_order_material__supplier','material_order__material__supplier','material_order__material__uom')
-
-    def destroy(self, request, *args, **kwargs):
-        pk = kwargs['pk']
-        instance = get_object_or_404(self.queryset,pk=pk)
-
-        if instance.fulfilled_quantity > 0:
-            invalid()
-
-        return super().destroy(request, *args, **kwargs)
-
-class MaterialReceiptScheduleReadOnlyViewSet(RetrieveModelViewSet):
-    '''
-    a viewset for get all schedule based on its purchase order material, for detail po page
-    '''
-    permission_classes = [PurchasingPermission]
-    serializer_class = MaterialReceiptScheduleReadOnlySerializer
-    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__purchase_order_material','material_order__material','material_order__purchase_order_material__supplier','material_order__material__supplier','material_order__material__uom')
-
-    def retrieve(self, request, *args, **kwargs):
-        pk = kwargs['pk']
-        queryset = self.filter_queryset(self.get_queryset())
-        validate_queryset = queryset.filter(material_order__purchase_order_material__id__exact=pk)
-        serializer = self.get_serializer(validate_queryset, many=True)
-
-        return Response(serializer.data)
-
-
 

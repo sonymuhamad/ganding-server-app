@@ -5,15 +5,16 @@ from django.db.models import Prefetch,Sum
 from django.shortcuts import get_object_or_404
 
 from marketing.permissions import MarketingPermission,CanManageSalesOrder
-from marketing.serializer import DeliveryScheduleReadOnlySerializer,SalesOrderListSerializer,SalesOrderManagementSerializer,ProductOrderManagementSerializer,DeliveryScheduleManagementSerializer
 from marketing.models import SalesOrder
 
 from marketing.shortcuts import validate_productorder
 from manager.shortcuts import invalid
 
-from ppic.serializer import ProductDeliverCustomerReadOnlySerializer
 from ppic.models import DeliverySchedule,ProductOrder,ProductDeliverCustomer
 
+from marketing.serializers.sales_order_serializer import ThreeDepthDeliveryScheduleSerializer,SalesOrderListSerializer,SalesOrderManagementSerializer,ProductOrderManagementSerializer,DeliveryScheduleManagementSerializer
+
+from ppic.serializers.delivery_serializer import TwoDepthProductDeliverCustomerSerializer
 
 
 class DeliveryScheduleReadOnlyViewSet(ReadOnlyModelViewSet):
@@ -21,7 +22,7 @@ class DeliveryScheduleReadOnlyViewSet(ReadOnlyModelViewSet):
     a viewset provide endpoint to get a list of delivery schedules
     '''
     permission_classes = [MarketingPermission]
-    serializer_class = DeliveryScheduleReadOnlySerializer
+    serializer_class = ThreeDepthDeliveryScheduleSerializer
     
     unfilter_queryset = DeliverySchedule.objects.select_related('product_order','product_order__product','product_order__sales_order','product_order__product__customer','product_order__product__type','product_order__sales_order__customer')
     
@@ -50,8 +51,7 @@ class ProductDeliverCustomerReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     a viewset class provide get data product delivery, and retrieve product delivery by its sales order
     '''
-    serializer_class = ProductDeliverCustomerReadOnlySerializer
-    permission_classes = [MarketingPermission]
+    serializer_class = TwoDepthProductDeliverCustomerSerializer
     queryset = ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order','delivery_note_customer','schedules','schedules__product_order','delivery_note_customer__customer','delivery_note_customer__vehicle','delivery_note_customer__driver')
 
     def retrieve(self, request, *args, **kwargs):

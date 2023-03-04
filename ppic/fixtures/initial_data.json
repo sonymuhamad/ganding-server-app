@@ -1,0 +1,65 @@
+[
+    {
+        "model": "ppic.processtype",
+        "pk": "1",
+        "fields": {
+            "name": "Stamping process"
+        }
+    },
+    {
+        "model": "ppic.processtype",
+        "pk": "2",
+        "fields": {
+            "name": "Subcont process"
+        }
+    },
+    {
+        "model": "ppic.producttype",
+        "pk": "1",
+        "fields": {
+            "name": "Stamping"
+        }
+    },
+    {
+        "model": "ppic.producttype",
+        "pk": "2",
+        "fields": {
+            "name": "Assembly welding"
+        }
+    },
+    {
+        "model": "ppic.unitofmaterial",
+        "pk": "1",
+        "fields": {
+            "name": "Plat"
+        }
+    },
+    {
+        "model": "ppic.unitofmaterial",
+        "pk": "2",
+        "fields": {
+            "name": "Sheet"
+        }
+    },
+    {
+        "model": "ppic.unitofmaterial",
+        "pk": "3",
+        "fields": {
+            "name": "Coil"
+        }
+    },
+    {
+        "model": "ppic.warehousetype",
+        "pk": "1",
+        "fields": {
+            "name": "Finished Good"
+        }
+    },
+    {
+        "model": "ppic.warehousetype",
+        "pk": "2",
+        "fields": {
+            "name": "Subcont"
+        }
+    }
+]

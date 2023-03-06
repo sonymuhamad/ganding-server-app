@@ -1,9 +1,9 @@
-from rest_framework.viewsets import GetModelViewSet
-from django.db.models import Q,F,Prefetch,Sum
+from django.db.models import Prefetch,Sum
 from rest_framework.response import Response
 from datetime import date
 from dateutil import rrule
 
+from manager.viewsets import GetModelViewSet
 from manager.permissions import ManagerPermission
 from manager.serializer import ReportOrderEachMonthReadOnlySerializer,ReportSupplierOrderReadOnlySerializer
 

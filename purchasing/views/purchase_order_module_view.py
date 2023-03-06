@@ -1,8 +1,8 @@
-from rest_framework.viewsets import CreateUpdateDeleteModelViewSet,RetrieveModelViewSet,ReadOnlyModelViewSet,UpdateModelViewSet
 from rest_framework.response import Response
-
 from django.db.models import Prefetch,Count,F
 from math import ceil
+
+from manager.viewsets import CreateUpdateDeleteModelViewSet,RetrieveModelViewSet,ReadOnlyModelViewSet,UpdateModelViewSet
 
 from purchasing.permissions import PurchasingPermission,CanManagePurchaseOrderMaterial
 from purchasing.models import PurchaseOrderMaterial

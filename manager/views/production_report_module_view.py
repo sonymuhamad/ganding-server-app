@@ -1,7 +1,7 @@
-from rest_framework.viewsets import GetModelViewSet
 from rest_framework import response
 from django.db.models import Sum,Count,Avg,Q
 
+from manager.viewsets import GetModelViewSet
 from datetime import date
 from dateutil import rrule
 

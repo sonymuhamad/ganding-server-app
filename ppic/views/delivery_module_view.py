@@ -1,5 +1,4 @@
-from rest_framework.viewsets import ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
-
+from manager.viewsets import ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet 
 from django.db.models import Count,F,Prefetch,Q,Sum
 from django.shortcuts import get_object_or_404
 

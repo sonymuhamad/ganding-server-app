@@ -1,10 +1,10 @@
-from rest_framework.viewsets import ReadOnlyModelViewSet,RetrieveModelViewSet,CreateUpdateDeleteModelViewSet
 from django.db.models import Count,Q,Sum,Prefetch,QuerySet
 from rest_framework.response import Response
 
+from manager.viewsets import ReadOnlyModelViewSet,RetrieveModelViewSet,CreateUpdateDeleteModelViewSet 
+
 from marketing.permissions import MarketingPermission,CanManageCustomer
 from marketing.models import Customer,SalesOrder,Invoice
-
 from ppic.models import Product,ProductDeliverCustomer,ProductOrder
 
 from manager.shortcuts import invalid

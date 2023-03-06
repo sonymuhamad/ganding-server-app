@@ -1,7 +1,7 @@
-from rest_framework.viewsets import GetModelViewSet,ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
 from rest_framework.response import Response
 from rest_framework import status
 
+from manager.viewsets import ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet,GetModelViewSet
 from django.db.models import Prefetch
 
 from marketing.permissions import MarketingPermission,CanManageInvoice

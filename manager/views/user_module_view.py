@@ -1,7 +1,7 @@
-from rest_framework.viewsets import CreateUpdateDeleteModelViewSet,ReadOnlyModelViewSet,GetModelViewSet,UpdateModelViewSet,RetrieveModelViewSet
 from rest_framework import response,status
 from django.contrib.auth.models import User,Group,Permission
 
+from manager.viewsets import CreateUpdateDeleteModelViewSet,ReadOnlyModelViewSet,GetModelViewSet,UpdateModelViewSet,RetrieveModelViewSet
 from manager.permissions import ManagerPermission,CanManageUser
 from manager.serializer import UserManagementSerializer,UserReadOnlySerializer,GroupReadOnlySerializer,UserGroupManagementSerializer,PermissionReadOnlySerializer
 

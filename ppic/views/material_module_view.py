@@ -1,6 +1,6 @@
-from rest_framework.viewsets import CreateUpdateDeleteModelViewSet,ReadOnlyModelViewSet
 from rest_framework.response import Response
 
+from manager.viewsets import CreateUpdateDeleteModelViewSet,ReadOnlyModelViewSet
 from manager.shortcuts import invalid
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch,F,Count

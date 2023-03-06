@@ -1,10 +1,10 @@
-from rest_framework.viewsets import ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
 from rest_framework.response import Response
 from rest_framework import status
 
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch,F,Count,Sum
 
+from manager.viewsets import ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
 from manager.shortcuts import invalid
 from ppic.utils import MultipartJsonParser
 from ppic.permissions import CanManageProduct,PpicPermission

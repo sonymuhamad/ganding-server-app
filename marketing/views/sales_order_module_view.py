@@ -1,9 +1,8 @@
-from rest_framework.viewsets import ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
 from rest_framework.response import Response
-
 from django.db.models import Prefetch,Sum
 from django.shortcuts import get_object_or_404
 
+from manager.viewsets import ReadOnlyModelViewSet,CreateUpdateDeleteModelViewSet
 from marketing.permissions import MarketingPermission,CanManageSalesOrder
 from marketing.models import SalesOrder
 

@@ -1,8 +1,7 @@
-from rest_framework.viewsets import CreateUpdateDeleteModelViewSet,ReadOnlyModelViewSet,RetrieveModelViewSet
-
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch,Count
 
+from manager.viewsets import CreateUpdateDeleteModelViewSet,ReadOnlyModelViewSet,RetrieveModelViewSet
 from purchasing.permissions import PurchasingPermission,CanManageSupplier
 from purchasing.models import Supplier,PurchaseOrderMaterial
 

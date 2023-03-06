@@ -162,10 +162,8 @@ OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = "oauth2_provider.AccessToken"
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "https://master--scmganding.netlify.app",
-    
+    "https://scmganding.netlify.app",   
 ]
-
 
 CORS_ALLOW_METHODS = [
     'DELETE',

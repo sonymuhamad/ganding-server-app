@@ -4,7 +4,8 @@ import requests
 from oauth2_provider.models import AccessToken
 from datetime import datetime
 from .serializer import UserSerializer
-from rest_framework.viewsets import ModelViewSet,CreateModelViewSet
+from rest_framework.viewsets import ModelViewSet
+from manager.viewsets import CreateModelViewSet
 from django.contrib.auth.hashers import check_password
 from .shortcuts import invalid
 

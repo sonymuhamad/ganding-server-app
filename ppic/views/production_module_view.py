@@ -77,14 +77,14 @@ class ProductionPriorityViewSet(ReadOnlyModelViewSet):
     def list(self, request, *args, **kwargs):
 
         sales_order = SalesOrder.objects.filter(fixed=True,closed=False).prefetch_related(
-            Prefetch('productorder_set',queryset=ProductOrder.objects.filter(delivered__lt=F('ordered')).select_related('product').prefetch_related('product__ppic_process_related')))
+            Prefetch('productorder_set',queryset=ProductOrder.objects.filter(delivered__lt=F('ordered')).select_related('product').prefetch_related(Prefetch('product__ppic_process_related',queryset=Process.objects.select_related('product','process_type')))))
 
         process_type_subcont = ProcessType.objects.get(pk=2)
 
         queryset_warehouseproduct = WarehouseProduct.objects.select_related('warehouse_type','process','product')
-        queryset_requirement_product = RequirementProduct.objects.select_related('product','process','product__customer','product__type').prefetch_related(
+        queryset_requirement_product = RequirementProduct.objects.select_related('product','product__customer','product__type').prefetch_related(
         Prefetch('product__ppic_warehouseproduct_related',queryset_warehouseproduct))
-        queryset_requirement_material = RequirementMaterial.objects.select_related('material','material__warehousematerial','material__supplier','material__uom','material__warehousematerial__material','process')
+        queryset_requirement_material = RequirementMaterial.objects.select_related('material','material__warehousematerial','material__supplier','material__uom','material__warehousematerial__material','process','process__process_type','process__product')
 
         queryset_product = Product.objects.get_queryset_related().prefetch_related(
             Prefetch('ppic_process_related',queryset=Process.objects.
@@ -93,7 +93,7 @@ class ProductionPriorityViewSet(ReadOnlyModelViewSet):
             prefetch_related(
                 Prefetch('requirementproduct_set',queryset = queryset_requirement_product)).
             prefetch_related(
-                Prefetch('requirementmaterial_set',queryset = queryset_requirement_material)).exclude(process_type=process_type_subcont).select_related('process_type','product')))
+                Prefetch('requirementmaterial_set',queryset = queryset_requirement_material)).select_related('process_type','product').exclude(process_type=process_type_subcont)))
 
         dataProduct = {}
         productOrdered = {}
@@ -168,7 +168,11 @@ class ProductionPriorityViewSet(ReadOnlyModelViewSet):
 
 
         for so in sales_order:
+            # get all sales order in progresss
+
             for po in so.productorder_set.all():
+                ## loop through product in ordered
+
                 if po.product.id in productOrdered:
                     productOrdered[po.product.id] += (po.ordered - po.delivered)
                 else:
@@ -288,6 +292,7 @@ class ProductDeliverSubcontReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     permission_classes = [PpicPermission]
     serializer_class = ProductDeliverSubcontReadOnlySerializer
-    queryset = ProductDeliverSubcont.objects.select_related('deliver_note_subcont','product','process','deliver_note_subcont__driver','deliver_note_subcont__vehicle','deliver_note_subcont__supplier','product__customer','product__type','process__process_type','process__product').annotate(received=Sum('subcontreceipt__quantity')).prefetch_related(
-        Prefetch('requirementmaterialsubcont_set',queryset=RequirementMaterialSubcont.objects.select_related('product_subcont','material','material__uom','material__supplier') )).prefetch_related(
-            Prefetch('requirementproductsubcont_set',queryset=RequirementProductsubcont.objects.select_related('product_subcont','product','product__customer','product__type'))).prefetch_related(Prefetch('receiptsubcontschedule_set',queryset=ReceiptSubcontSchedule.objects.select_related('product_subcont'))).order_by('deliver_note_subcont__date')
+    queryset = ProductDeliverSubcont.objects.select_related('deliver_note_subcont','product','process','deliver_note_subcont__driver','deliver_note_subcont__vehicle','deliver_note_subcont__supplier','product__customer','product__type','process__process_type','process__product').prefetch_related(
+        Prefetch('requirementmaterialsubcont_set',queryset=RequirementMaterialSubcont.objects.select_related('product_subcont','product_subcont__deliver_note_subcont','product_subcont__product','product_subcont__process','material','material__uom','material__supplier') )).prefetch_related(
+            Prefetch('requirementproductsubcont_set',queryset=RequirementProductsubcont.objects.select_related('product_subcont','product_subcont__product','product_subcont__deliver_note_subcont','product_subcont__process','product','product__customer','product__type'))).prefetch_related(
+        Prefetch('receiptsubcontschedule_set',queryset=ReceiptSubcontSchedule.objects.all())).order_by('deliver_note_subcont__date').annotate(received=Sum('subcontreceipt__quantity'))

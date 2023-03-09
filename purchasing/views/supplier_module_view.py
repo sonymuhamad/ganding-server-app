@@ -8,7 +8,7 @@ from purchasing.models import Supplier,PurchaseOrderMaterial
 from purchasing.shortcuts import validate_po
 from manager.shortcuts import invalid
 
-from ppic.models import Material,MaterialOrder
+from ppic.models import Material,MaterialOrder,MaterialReceiptSchedule
 
 from purchasing.serializers.supplier_serializer import BaseSupplierSerializer,SupplierNestedPurchaseOrderSerializer
 
@@ -59,7 +59,7 @@ class SupplierReadOnlyViewSet(RetrieveModelViewSet):
     serializer_class = SupplierNestedPurchaseOrderSerializer
     queryset = Supplier.objects.prefetch_related(
         Prefetch('ppic_material_related',queryset=Material.objects.select_related('uom','supplier','warehousematerial')),Prefetch(
-            'purchasing_purchaseordermaterial_related',queryset=PurchaseOrderMaterial.objects.prefetch_related(
-        Prefetch(
-                'materialorder_set',queryset=MaterialOrder.objects.select_related('material','purchase_order_material','material__uom','material__supplier')))))
+            'purchasing_purchaseordermaterial_related',queryset=PurchaseOrderMaterial.objects.get_queryset_one_depth_related().prefetch_related(
+        Prefetch('materialorder_set',queryset=MaterialOrder.objects.get_queryset_two_depth_related().prefetch_related(
+        Prefetch('materialreceiptschedule_set',MaterialReceiptSchedule.objects.get_queryset_three_depth_related()))))))
 

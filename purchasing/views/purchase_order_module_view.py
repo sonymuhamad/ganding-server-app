@@ -163,9 +163,9 @@ class MrpReadOnlyViewSet(RetrieveModelViewSet):
         Prefetch('detailmrp_set',queryset=DetailMrp.objects.select_related('product'))).select_related('material','material__supplier','material__uom')
 
     queryset_product =  Product.objects.prefetch_related(
-            Prefetch('ppic_process_related',queryset=Process.objects.select_related('product','process_type').prefetch_related(
+            Prefetch('ppic_process_related',queryset=Process.objects.select_related('process_type').prefetch_related(
                 Prefetch('requirementproduct_set',queryset=RequirementProduct.objects.select_related('product'))).prefetch_related(
-                    Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type','product','process'))).prefetch_related(
+                    Prefetch('warehouseproduct_set',queryset=WarehouseProduct.objects.select_related('warehouse_type',))).prefetch_related(
                         Prefetch('requirementmaterial_set',queryset=RequirementMaterial.objects.select_related('material','material__supplier','material__uom','material__warehousematerial','process').prefetch_related(
                             Prefetch('material__ppic_materialorder_related',queryset=MaterialOrder.objects.filter(ordered__gt=F('arrived')).select_related('material','purchase_order_material'))).prefetch_related(
                                 Prefetch('material__ppic_materialrequirementplanning_related',queryset=MaterialRequirementPlanning.objects.select_related('material').prefetch_related(

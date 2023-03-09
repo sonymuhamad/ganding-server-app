@@ -184,18 +184,18 @@ class ProductManagementViewSet(CreateUpdateDeleteModelViewSet):
 
         instance_product = get_object_or_404(queryset,pk=pk)
         
-        for productorder in instance_product.ppic_productorder_related.all():
-            if productorder.delivered > 0:
-                invalid()
+        if instance_product.ppic_productorder_related.filter(delivered__gt=0).exists():
+            invalid()
 
-        for whproduct in instance_product.ppic_warehouseproduct_related.all():
-            if whproduct.quantity > 0:
-                invalid()
+        if instance_product.ppic_warehouseproduct_related.filter(quantity__gt=0).exists():
+            '''
+            if there is any stock in warehouse product then invalid
+            '''
+            invalid('Product tersebut masih memiliki stok di warehouse')
 
-        for requirement_product in instance_product.ppic_requirementproduct_related.all():
-            if requirement_product.conversion > 0:
-                invalid()
-
+        if instance_product.ppic_requirementproduct_related.filter(input__gt=0).exists():
+            invalid('Product tersebut masih menjadi kebutuhan Product Assembly pada manufacturing process')
+        
         return super().destroy(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):

@@ -93,7 +93,7 @@ class CustomerProductDeliverCustomerReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     serializer_class = TwoDepthProductDeliverCustomerSerializer
     permission_classes = [MarketingPermission]
-    queryset = ProductDeliverCustomer.objects.select_related('product_order','product_order__product','product_order__sales_order','delivery_note_customer','schedules','schedules__product_order','delivery_note_customer__customer','delivery_note_customer__vehicle','delivery_note_customer__driver')
+    queryset = ProductDeliverCustomer.objects.get_queryset_two_depth_related()
 
     def retrieve(self, request, *args, **kwargs):
 
@@ -104,9 +104,12 @@ class CustomerProductDeliverCustomerReadOnlyViewSet(ReadOnlyModelViewSet):
         return Response(serializer.data)
     
 class ProductCustomerViewSet(ReadOnlyModelViewSet):
+    '''
+    viewset for get product based on customer id
+    '''
     permission_classes = [MarketingPermission]
     serializer_class = OneDepthProductSerializer
-    queryset = Product.objects.select_related('customer','type').annotate(total_stock=Sum('ppic_warehouseproducts__quantity'))
+    queryset = Product.objects.get_queryset_related().annotate(total_stock=Sum('ppic_warehouseproducts__quantity'))
 
     def retrieve(self, request, *args, **kwargs):
 

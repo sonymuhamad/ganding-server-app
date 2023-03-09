@@ -178,7 +178,7 @@ class MaterialReceiptScheduleReadOnlyViewSet(ReadOnlyModelViewSet):
     '''
     permission_classes = [PpicPermission]
     serializer_class = ThreeDepthMaterialReceiptScheduleSerializer
-    queryset = MaterialReceiptSchedule.objects.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier').filter(Q(fulfilled_quantity__lte=0)&Q(material_order__arrived__lt=F('material_order__ordered'))).order_by('date')
+    queryset = MaterialReceiptSchedule.objects.get_queryset_three_depth_related().filter(Q(fulfilled_quantity__lte=0)&Q(material_order__arrived__lt=F('material_order__ordered'))).order_by('date')
 
 class ProductDeliverSubcontListViewSet(ReadOnlyModelViewSet):
     '''
@@ -186,7 +186,7 @@ class ProductDeliverSubcontListViewSet(ReadOnlyModelViewSet):
     '''
     permission_classes = [PpicPermission]
     serializer_class = OneDepthProductDeliverSubcontSerializer
-    queryset = ProductDeliverSubcont.objects.prefetch_related('subcontreceipt_set').select_related('deliver_note_subcont','process','product').annotate(received=Sum('subcontreceipt__quantity')).filter(Q(received__lt=F('quantity'))|Q(received=None))
+    queryset = ProductDeliverSubcont.objects.select_related('deliver_note_subcont','process','product').annotate(received=Sum('subcontreceipt__quantity')).filter(Q(received__lt=F('quantity'))|Q(received=None))
 
 class MaterialOrderReadOnlyViewSet(ReadOnlyModelViewSet):
     '''

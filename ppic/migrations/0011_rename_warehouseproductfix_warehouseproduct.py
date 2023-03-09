@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("ppic", "0010_warehouseproductfix_and_more"),
+        ("ppic", "00101_delete_warehouseproduct"),
     ]
 
     operations = [

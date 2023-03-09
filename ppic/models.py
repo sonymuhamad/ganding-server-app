@@ -95,11 +95,22 @@ class ProductOrder(AbstractProduct):
             self.price = self.product.price
         super(ProductOrder, self).save(*args, **kwargs)
 
+class DeliveryScheduleManager(models.Manager):
+    '''
+    extend default manager for delivery schedule
+    '''
+    def get_queryset_three_depth_related(self) -> models.QuerySet:
+        '''
+        method that return queryset with three depth relations
+        '''
+        return self.select_related('product_order','product_order__product','product_order__product__customer','product_order__product__type','product_order__sales_order','product_order__sales_order__customer')
 
 class DeliverySchedule(AbstractSchedule):
     '''
     schedule delivery for each product order
     '''
+    objects = DeliveryScheduleManager()
+
     product_order = models.ForeignKey(ProductOrder,on_delete=models.CASCADE)
 
 class MaterialManager(models.Manager):
@@ -275,11 +286,22 @@ class ReceiptSubcontSchedule(AbstractSchedule):
     '''
     product_subcont = models.ForeignKey(ProductDeliverSubcont,on_delete=models.CASCADE)
 
+class ProductDeliverCustomerManager(models.Manager):
+    '''
+    extend default manager for product deliver customer
+    '''
+    def get_queryset_two_depth_related(self)->models.QuerySet:
+        '''
+        method that return queryset with two depth relations
+        '''
+        return self.select_related('product_order','product_order__product','product_order__sales_order','delivery_note_customer','schedules','schedules__product_order','delivery_note_customer__customer','delivery_note_customer__vehicle','delivery_note_customer__driver')
 
 class ProductDeliverCustomer(AbstractQuantity):
     '''
     model to handle all product shipped on each delivery note
     '''
+    objects = ProductDeliverCustomerManager()
+
     product_order = models.ForeignKey(ProductOrder,on_delete=models.CASCADE)
     delivery_note_customer = models.ForeignKey(DeliveryNoteCustomer,on_delete=models.CASCADE)
     description = models.TextField(default='')
@@ -304,10 +326,22 @@ class DetailMrp(AbstractQuantity,AbstractProduct):
     class Meta(AbstractQuantity.Meta,AbstractProduct.Meta):
         pass
 
+class MaterialOrderManager(models.Manager):
+    '''
+    extend default manager for material order
+    '''
+    def get_queryset_two_depth_related(self) -> models.query:
+        '''
+        get queryset for material order two depth of relations
+        '''
+        return self.select_related('material','purchase_order_material','material__uom','material__supplier','purchase_order_material__supplier')
+
 class MaterialOrder(AbstractMaterial):
     '''
     responsible for all data purchase material of every purchase order
     '''
+    objects = MaterialOrderManager()
+
     purchase_order_material = models.ForeignKey(PurchaseOrderMaterial,on_delete=models.CASCADE)
     ordered = models.PositiveBigIntegerField()
     to_product = models.ForeignKey(Product,on_delete=models.CASCADE,blank=True,null=True)
@@ -319,11 +353,23 @@ class MaterialOrder(AbstractMaterial):
             self.price = self.material.price
         super(MaterialOrder, self).save(*args, **kwargs)
 
+class MaterialReceiptScheduleManager(models.Manager):
+    '''
+    manager for material receipt schedules
+    '''
+    def get_queryset_three_depth_related(self) -> models.QuerySet:
+        '''
+        method to get 3 deep dive of material receipt schedule
+        '''
+        return self.select_related('material_order','material_order__material','material_order__purchase_order_material','material_order__material__supplier','material_order__material__uom','material_order__purchase_order_material__supplier')
 
 class MaterialReceiptSchedule(AbstractSchedule):
     '''
     schedule for material arrive
     '''
+
+    objects = MaterialReceiptScheduleManager()
+
     material_order = models.ForeignKey(MaterialOrder,on_delete=models.CASCADE)
 
 

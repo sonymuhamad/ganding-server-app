@@ -11,7 +11,22 @@ class AbstractSupplier(models.Model):
     class Meta:
         abstract = True
 
+class PurchaseOrderMaterialManager(models.Manager):
+    '''
+    extend default manager
+    '''
+    def get_queryset_one_depth_related(self) -> models.QuerySet:
+        '''
+        method to get queryset of purchase order for two depth relations 
+        '''
+        return self.select_related('supplier')
+
 class PurchaseOrderMaterial(AbstractCode,AbstractSupplier,AbstractCreated):
+    '''
+    model for purchase order material
+    '''
+    objects = PurchaseOrderMaterialManager()
+
     done = models.BooleanField(default=False)
     closed = models.BooleanField(default=False)
     date = models.DateField(default=datetime.date.today)
